@@ -1,0 +1,26 @@
+{
+  "allowedHosts": ["app.powerbi.com"],
+  "profileDirectory": ".auth/powerbi-profile",
+  "outputDirectory": "data",
+  "artifactDirectory": "artifacts",
+  "diagnostics": false,
+  "maxRows": 10000,
+  "maxScrolls": 250,
+  "settleMs": 1500,
+  "reports": [
+    {
+      "id": "presente-estadual",
+      "name": "2026 Presente Estadual",
+      "url": "https://app.powerbi.com/COLE-AQUI-A-URL-AUTORIZADA",
+      "visualTitle": "COLE AQUI O TITULO EXATO DO VISUAL",
+      "visualAnchorText": "Turma",
+      "filters": [],
+      "expectedColumns": ["Aluno", "Turma"],
+      "expectedDataRows": 38,
+      "extractionMode": "auto",
+      "domZoomSteps": 0,
+      "outputName": "presente-estadual",
+      "enabled": false
+    }
+  ]
+}

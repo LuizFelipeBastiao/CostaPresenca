@@ -1,0 +1,10 @@
+node_modules
+dist
+.auth
+data
+artifacts
+REFERENCIA
+*.har
+*.pdf
+*.mkv
+*.webm

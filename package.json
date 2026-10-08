@@ -1,0 +1,32 @@
+{
+  "name": "bi-escolar-collector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Coletor auditável de tabelas autorizadas do Power BI para o BI escolar.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "login": "tsx src/cli.ts login",
+    "inspect": "tsx src/cli.ts inspect",
+    "collect": "tsx src/cli.ts collect",
+    "collect:all": "tsx src/cli.ts collect --all --execute",
+    "collect:pre-conselho": "tsx src/extract-pre-conselho.ts",
+    "collect:presente-alunos": "tsx src/extract-presente-alunos.ts",
+    "consolidate": "tsx src/consolidate.ts",
+    "network:probe": "tsx src/cli.ts network-probe"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

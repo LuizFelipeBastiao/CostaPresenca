@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.auth/
+data/
+artifacts/
+config/local.json
+*.har
+*.zip
+*.pdf
+*.jpg
+*.jpeg
+*.png
+REFERENCIA/
+
+# Materiais de origem podem conter dados internos e credenciais.
+*.mkv
+*.webm
