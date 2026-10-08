@@ -15,7 +15,8 @@
     "collect:pre-conselho": "tsx src/extract-pre-conselho.ts",
     "collect:presente-alunos": "tsx src/extract-presente-alunos.ts",
     "consolidate": "tsx src/consolidate.ts",
-    "network:probe": "tsx src/cli.ts network-probe"
+    "network:probe": "tsx src/cli.ts network-probe",
+    "notificar": "tsx src/notificar-faltas.ts"
   },
   "engines": {
     "node": ">=22"

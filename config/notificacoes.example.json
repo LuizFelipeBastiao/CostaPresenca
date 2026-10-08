@@ -1,0 +1,8 @@
+{
+  "escola": "Colégio Estadual Arthur da Costa e Silva",
+  "dataDirectory": "data",
+  "contatosCsv": "data/cadastros/contatos_responsaveis.csv",
+  "maxDiasEntreColetas": 4,
+  "mensagem": "Olá, {responsavel}. O {escola} informa que foi registrada ausência de {aluno} ({turma}) nas aulas recentes (atualização de {data}). Em caso de dúvida ou para justificar a falta, entre em contato com a secretaria da escola.",
+  "canal": { "tipo": "simulacao" }
+}
