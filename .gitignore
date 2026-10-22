@@ -15,3 +15,7 @@ REFERENCIA/
 # Materiais de origem podem conter dados internos e credenciais.
 *.mkv
 *.webm
+
+# Notificações: segredos e configuração local
+.env
+config/notificacoes.json

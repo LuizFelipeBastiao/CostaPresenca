@@ -15,17 +15,21 @@
     "collect:pre-conselho": "tsx src/extract-pre-conselho.ts",
     "collect:presente-alunos": "tsx src/extract-presente-alunos.ts",
     "consolidate": "tsx src/consolidate.ts",
-    "network:probe": "tsx src/cli.ts network-probe"
+    "network:probe": "tsx src/cli.ts network-probe",
+    "notificar": "tsx src/notificar.ts",
+    "notificar:contatos": "tsx src/notificar.ts modelo-contatos"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
+    "nodemailer": "^10.2.0",
     "playwright": "^1.55.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",
+    "@types/nodemailer": "^8.0.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }

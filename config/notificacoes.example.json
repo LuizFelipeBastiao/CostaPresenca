@@ -1,0 +1,29 @@
+{
+  "escola": {
+    "nome": "Nome da escola como os pais conhecem",
+    "telefoneContato": "(45) 3000-0000"
+  },
+  "canal": "dry-run",
+  "contatosCsv": "data/cadastros/contatos_responsaveis.csv",
+  "exigirConsentimento": true,
+  "janelaReenvioDias": 6,
+  "maxIdadeDadosHoras": 48,
+  "maxEnviosPorExecucao": 300,
+  "intervaloEntreEnviosMs": 1500,
+  "regras": {
+    "semanaReferencia": "atual",
+    "presencaSemanaAbaixoDe": 100,
+    "presencaGeralCriticaAbaixoDe": 75,
+    "ignorarAmparoLegalDias": 14,
+    "somenteMatriculados": true
+  },
+  "whatsappCloud": {
+    "apiVersion": "v21.0",
+    "phoneNumberIdEnv": "WHATSAPP_PHONE_NUMBER_ID",
+    "tokenEnv": "WHATSAPP_TOKEN"
+  },
+  "webhook": {
+    "url": "https://exemplo.invalid/enviar",
+    "authHeaderEnv": "WEBHOOK_TOKEN"
+  }
+}
