@@ -5,6 +5,8 @@
   "description": "Coletor auditável de tabelas autorizadas do Power BI para o BI escolar.",
   "type": "module",
   "scripts": {
+    "start": "tsx src/server.ts",
+    "ui": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test tests/**/*.test.ts",
