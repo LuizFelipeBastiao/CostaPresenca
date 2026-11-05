@@ -1,145 +1,171 @@
-# Coletor do BI Escolar
+# CostaPresença — Coletor e Notificador do BI Escolar
 
-MVP auditável para coletar tabelas que um usuário autorizado consegue visualizar no Power BI. O coletor usa a própria interface **Mostrar como uma tabela** e não captura cookies, tokens ou senhas.
+Solução auditável para automação do acompanhamento da frequência escolar, leitura dos relatórios oficiais do Power BI da SEED-PR, notificação personalizada de responsáveis via WhatsApp/e-mail e emissão de fichas para o Conselho Tutelar.
 
-## Limites de segurança
+---
 
-- Funciona apenas nos hosts declarados em `allowedHosts`.
-- Cada relatório e visual precisa ser habilitado explicitamente.
-- A coleta exige a flag `--execute`.
-- Os cliques usam texto e estrutura acessível; não escolhem itens por posição.
-- `Incluir`, `Excluir`, `Remover` e `Publicar na Web` são ações proibidas.
-- Não tenta resolver CAPTCHA, MFA ou bloqueios de acesso.
-- Dados, perfil do navegador e diagnósticos ficam fora do Git.
-- Use somente dados e contas formalmente autorizados pela instituição.
+## 🚀 Como Iniciar com 2 Cliques (Interface Gráfica)
 
-## Preparação
+Não é necessário usar comandos no terminal para a rotina diária da escola.
+
+Basta dar um duplo clique em:
+👉 **`Abrir_Painel_Escola.bat`**
+
+O servidor local será iniciado e abrirá automaticamente o navegador em `http://localhost:3000`, oferecendo:
+- **📊 Visão Geral:** Contadores de alunos lidos, faltas da semana, casos com infrequência crítica (< 75%) e mensagens prontas.
+- **💬 Prévia Interativa:** Lista completa dos alunos com faltas e o texto exato da mensagem que será enviada.
+- **🚀 Disparo em 1 Clique:** Envio seguro para os responsáveis (com opção de teste prévio no seu próprio celular).
+- **👥 Cadastro de Telefones:** Formulário rápido para adicionar o telefone de pais pendentes sem editar planilhas.
+- **📋 Ficha do Conselho Tutelar:** Emissão e impressão da ficha oficial FICAI para alunos infrequentes com base na LDB e ECA.
+- **📜 Histórico Auditável:** Registro de todos os envios e confirmações de entrega.
+
+*(Se preferir abrir pelo terminal: `npm start` ou `npm run ui`)*.
+
+---
+
+## 📋 Análise de Aderência e Requisitos
+
+Para conferir a análise detalhada de todos os requisitos do *Sistema de Comunicação de Faltas com os Responsáveis*, consulte o documento:  
+📄 **[ANALISE_SISTEMA_FALTAS.md](ANALISE_SISTEMA_FALTAS.md)**
+
+---
+
+## 🔒 Limites de Segurança e Privacidade (LGPD)
+
+- Funciona apenas nos hosts autorizados declarados em `allowedHosts` (`app.powerbi.com`).
+- A coleta do Power BI exige a flag `--execute`.
+- **Sem senhas no código:** O login institucional utiliza o perfil persistente do Microsoft Edge (`npm run login`), respeitando MFA institucional.
+- **Privacidade total (LGPD):** O histórico de disparos armazena apenas o **hash SHA-256** do telefone/e-mail, nunca o número em claro.
+- Logs em console mascaram contatos (`+55 45 9****-8888`).
+- Dados, perfil do navegador e segredos permanecem fora do controle de versão (Git).
+
+---
+
+## 🛠️ Instalação e Preparação Inicial
 
 ```powershell
+# 1. Instalar as dependências
 npm install
+
+# 2. Instalar navegadores do Playwright (para coleta automatizada no Power BI)
 npx playwright install chromium
+
+# 3. Configurar os arquivos de ambiente
 Copy-Item config/reports.example.json config/local.json
-```
-
-Edite `config/local.json` com a URL autorizada, o nome exato do relatório e o título exato do visual. Mantenha `enabled: false` durante a inspeção.
-
-## Login humano
-
-```powershell
-npm run login -- --config config/local.json
-```
-
-O navegador ficará aberto para o usuário concluir login e MFA. A aplicação não solicita nem armazena a senha.
-
-## Inspeção sem coleta
-
-```powershell
-npm run inspect -- --config config/local.json --report presente-estadual
-```
-
-## Coleta autorizada
-
-Depois de validar a configuração e alterar `enabled` para `true`:
-
-```powershell
-npm run collect -- --config config/local.json --report presente-estadual --execute
-```
-
-As saídas ficam em `data/<relatorio>/` nos formatos CSV UTF-8 e JSON. `data/audit.jsonl` registra somente metadados operacionais, contagens e hash SHA-256.
-
-## Notificações aos responsáveis
-
-Lê o CSV nominal de presença (`data/presente-alunos/presente-alunos-latest.csv`), cruza pelo **CGM** com a planilha de contatos e avisa os responsáveis de quem faltou na semana.
-
-### 1. Configuração
-
-```powershell
 Copy-Item config/notificacoes.example.json config/notificacoes.json
 Copy-Item .env.example .env
 ```
 
-Em `config/notificacoes.json`, ajuste `escola.nome` e `escola.telefoneContato`. O canal começa como `dry-run`, que não envia nada.
+---
 
-### 2. Contatos dos responsáveis
+## 🌐 Automação da Coleta (Power BI SEED-PR)
 
-O CSV de presença não traz telefones. Os contatos ficam em `data/cadastros/contatos_responsaveis.csv` (`;` ou `,`):
+### 1. Login Institucional
 
-| cgm | responsavel | telefone | email | consentimento |
-|-----|-------------|----------|-------|---------------|
-| 123456789 | Maria Lima | (45) 99999-1111 | | sim |
+```powershell
+npm run login -- --config config/local.json
+```
+O navegador abrirá para o operador realizar o login com a conta institucional e MFA. O perfil fica salvo localmente em `.auth/powerbi-profile`.
 
-- Pode haver várias linhas por CGM (pai e mãe) ou vários telefones na mesma célula separados por `/`.
-- Só recebe mensagem quem tiver `consentimento = sim` (desligável com `exigirConsentimento: false`, mas mantenha ligado se não houver outra base legal formal).
-- Para gerar a lista dos alunos que ainda estão sem contato: `npm run notificar:contatos`. O arquivo sai em `data/cadastros/contatos_pendentes.csv`.
+### 2. Coleta Nominal de Presença e Alunos
 
-### 3. Prévia (sempre rode antes)
+```powershell
+# Coleta a lista nominal de alunos com CGM e presenças:
+npm run collect:presente-alunos
+
+# Coleta o painel de notas do Pré-Conselho:
+npm run collect:pre-conselho
+
+# Coleta todos os relatórios habilitados:
+npm run collect:all
+
+# Gera o resumo executivo e o painel de Busca Ativa:
+npm run consolidate
+```
+
+*(Dica: você pode rodar a esteira completa com um duplo clique no arquivo `executar_coleta.bat`).*
+
+---
+
+## 💬 Sistema de Notificações aos Responsáveis
+
+O sistema cruza a presença nominal (`data/presente-alunos/presente-alunos-latest.csv`) pelo **CGM** com a base de contatos dos pais (`data/cadastros/contatos_responsaveis.csv` ou cadastros via bot de WhatsApp).
+
+### 1. Prévia das Mensagens (Modo Seguro)
 
 ```powershell
 npm run notificar
 ```
+Gera a conferência no terminal e grava `data/notificacoes/previa-latest.csv` para conferência no Excel antes de qualquer envio.
 
-Mostra o resumo e grava `data/notificacoes/previa-latest.csv` com cada aluno, o status e o texto exato da mensagem. Os status possíveis são:
+Status possíveis:
+- `pronto`: mensagem pronta para disparo.
+- `ja-notificado`: o aviso já saiu nesta semana (respeita janela de reenvio).
+- `sem-contato`: aluno sem telefone cadastrado.
+- `sem-consentimento`: falta consentimento formal do responsável.
 
-- `pronto`: a mensagem será enviada.
-- `ja-notificado`: o aviso já saiu nesta semana.
-- `sem-contato`, `sem-consentimento` ou `sem-destino-no-canal`: falta completar o cadastro.
-
-### 4. Envio
+### 2. Gerar Lista de Contatos Pendentes
 
 ```powershell
-# teste: manda até 3 mensagens reais apenas para o seu número
+npm run notificar:contatos
+```
+Gera a planilha `data/cadastros/contatos_pendentes.csv` com todos os alunos com falta que ainda não possuem telefone cadastrado.
+
+### 3. Disparo das Notificações
+
+```powershell
+# Envio de teste (dispara até 3 mensagens apenas para o seu número):
 npm run notificar -- --execute --destino-teste 45999998888
 
-# envio real
+# Envio real para todos os responsáveis prontos:
 npm run notificar -- --execute
 ```
 
-### Regras (`regras` na configuração)
+---
 
-| Opção | Padrão | Efeito |
-|-------|--------|--------|
-| `semanaReferencia` | `atual` | `atual` usa "(%) Presença Aluno"; `anterior` usa a semana passada fechada |
-| `presencaSemanaAbaixoDe` | `100` | Avisa quem teve presença semanal abaixo disso (100 = qualquer falta) |
-| `presencaGeralCriticaAbaixoDe` | `75` | Abaixo disso usa o modelo de mensagem **crítica** |
-| `ignorarAmparoLegalDias` | `14` | Não avisa quem tem Amparo Legal recente (falta justificada) |
-| `somenteMatriculados` | `true` | Ignora transferidos/desistentes |
-| `idadeMaxima` | — | Ex.: `17` para avisar só responsáveis de menores |
+## ⚙️ Regras de Negócio e Modelos
 
-Os textos ficam em `modelos.falta` e `modelos.critica`. As variáveis aceitas são:
+Configuradas em `config/notificacoes.json`:
 
-`{responsavel}` `{aluno}` `{primeiroNome}` `{turma}` `{escola}` `{telefoneEscola}` `{presencaSemana}` `{presencaSemanaAnterior}` `{presencaGeral}` `{dataReferencia}`
+| Opção | Padrão | Descrição |
+|:---|:---:|:---|
+| `semanaReferencia` | `atual` | `atual` usa a semana em curso; `anterior` usa a semana fechada. |
+| `presencaSemanaAbaixoDe` | `100` | Avisa quem teve presença semanal abaixo disso (100 = qualquer falta). |
+| `presencaGeralCriticaAbaixoDe` | `75` | Abaixo disso (< 75% da LDB) usa o modelo de mensagem **crítica**. |
+| `ignorarAmparoLegalDias` | `14` | Ignora quem tem Amparo Legal recente (falta justificada). |
+| `somenteMatriculados` | `true` | Descarta alunos transferidos ou desistentes. |
 
-### Canais
+Variáveis disponíveis para os textos das mensagens:  
+`{responsavel}` `{aluno}` `{primeiroNome}` `{turma}` `{escola}` `{telefoneEscola}` `{presencaSemana}` `{presencaGeral}` `{dataReferencia}`
 
-| `canal` | Destino | Segredos no `.env` |
-|---------|---------|--------------------|
-| `dry-run` | — | — |
-| `whatsapp-cloud` | telefone | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TOKEN` |
-| `smtp` | e-mail | `SMTP_USER`, `SMTP_PASS` + seção `smtp` |
-| `webhook` | telefone ou e-mail | `WEBHOOK_TOKEN` (opcional) + seção `webhook` |
+---
 
-**WhatsApp Cloud (Meta):** mensagens iniciadas pela escola exigem um *template* aprovado pela Meta. Configure `whatsappCloud.template` com `nome`, `idioma` e a lista `parametros`, que são as variáveis acima na ordem do template. Sem template, a API só entrega texto livre para quem falou com a escola nas últimas 24h.
+## 📱 Canais de Envio Suportados
 
-**Webhook:** faz um POST JSON `{destino, assunto, mensagem, tipo, cgm}` para qualquer gateway (Z-API, Evolution API, n8n, SMS etc.).
+| Canal | Destino | Configuração |
+|:---|:---:|:---|
+| `dry-run` | — | Modo de simulação seguro padrão (não gasta créditos e não envia nada). |
+| `whatsapp-cloud` | Telefone | **WhatsApp Business Cloud API oficial (Meta)**. Requer `WHATSAPP_PHONE_NUMBER_ID` e `WHATSAPP_TOKEN` no `.env`. |
+| `webhook` | Telefone ou E-mail | Gateways de WhatsApp/SMS (Evolution API, Z-API, n8n). Requer URL em `config/notificacoes.json`. |
+| `smtp` | E-mail | Envio por e-mail institucional via `nodemailer`. Requer credenciais no `.env`. |
 
-### Proteções
+---
 
-- **Sem `--execute`, nada é enviado.**
-- Recusa envio real se o CSV de presença tiver mais de `maxIdadeDadosHoras` (padrão 48h), para não avisar faltas antigas.
-- Não repete aviso para o mesmo aluno e destino na mesma semana nem dentro de `janelaReenvioDias`.
-- Falhas não contam como enviadas e são tentadas de novo na próxima execução.
-- Para depois de 5 falhas seguidas, por exemplo com token expirado.
-- Respeita `maxEnviosPorExecucao` e `intervaloEntreEnviosMs`. Os casos críticos saem primeiro.
-- `data/notificacoes/envios.jsonl` guarda só o **hash** do telefone/e-mail, nunca o número.
-- Logs no console mascaram os telefones (`+55 45 9****-1111`).
+## ⏰ Agendamento Automático no Windows
 
-## Estado atual
+Para executar a coleta diária automaticamente (ex.: às 17:30 ao término do turno escolar):
+- Dê um duplo clique em **`agendar_tarefa_diaria.bat`**.
+- O assistente criará uma tarefa no Agendador de Tarefas do Windows (`schtasks`) para executar a coleta todos os dias úteis.
 
-Implementados:
+---
 
-- Coleta de vários relatórios (`collect:all`), com filtros e leitura das consultas do Power BI.
-- Extração nominal de presença (`collect:presente-alunos`) e pré-conselho.
-- Consolidação (`consolidate`).
-- Notificação aos responsáveis (`notificar`).
+## 🧪 Testes Automatizados
 
-O PostgreSQL ainda não foi implementado.
+Para executar os 19 testes automatizados do sistema:
+```powershell
+npm test
+```
+Para verificar os tipos estritos do TypeScript:
+```powershell
+npm run check
+```
