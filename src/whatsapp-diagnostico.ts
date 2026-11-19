@@ -173,7 +173,10 @@ async function conferirTemplates(config: NotificacoesConfig, token: string): Pro
   }
   if (wabaId === "") {
     console.log(`${INFO}WHATSAPP_WABA_ID não definida: não dá para conferir a aprovação por aqui.`);
-    console.log(`${INFO}Template configurado: "${configurado}". Confira o status em WhatsApp Manager → Modelos.`);
+    console.log(`${INFO}Ela fica na MESMA tela do Phone number ID (WhatsApp → Configuração da API),`);
+    console.log(`${INFO}logo abaixo dele, como "Identificação da conta do WhatsApp Business".`);
+    console.log(`${INFO}Outro jeito: abra o WhatsApp Manager e copie o waba_id= da barra de endereço.`);
+    console.log(`${INFO}Template configurado: "${configurado}". Por ora, confira o status em WhatsApp Manager → Modelos.`);
     return true;
   }
 
