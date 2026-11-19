@@ -51,7 +51,7 @@ const modelosSchema = z.object({
 });
 
 const whatsappCloudSchema = z.object({
-  apiVersion: z.string().regex(/^v\d+\.\d+$/).default("v21.0"),
+  apiVersion: z.string().regex(/^v\d+\.\d+$/).default("v25.0"),
   phoneNumberIdEnv: z.string().min(1).default("WHATSAPP_PHONE_NUMBER_ID"),
   tokenEnv: z.string().min(1).default("WHATSAPP_TOKEN"),
   /**
