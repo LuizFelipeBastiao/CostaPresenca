@@ -22,7 +22,21 @@
   "whatsappCloud": {
     "apiVersion": "v21.0",
     "phoneNumberIdEnv": "WHATSAPP_PHONE_NUMBER_ID",
-    "tokenEnv": "WHATSAPP_TOKEN"
+    "tokenEnv": "WHATSAPP_TOKEN",
+    "template": {
+      "nome": "aviso_frequencia",
+      "idioma": "pt_BR",
+      "parametros": [
+        "responsavel",
+        "escola",
+        "aluno",
+        "turma",
+        "presencaSemanaAnterior",
+        "presencaSemana",
+        "dataReferencia",
+        "telefoneEscola"
+      ]
+    }
   },
   "webhook": {
     "url": "https://exemplo.invalid/enviar",

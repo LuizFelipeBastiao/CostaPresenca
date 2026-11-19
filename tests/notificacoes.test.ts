@@ -198,6 +198,20 @@ test("queda semanal exige a semana atual como referencia", () => {
   assert.doesNotThrow(() => validarRegras(cfg({ regras: { semanaReferencia: "anterior", exigirQuedaSemanal: false } })));
 });
 
+test("config de exemplo: parametros do template batem com as variaveis conhecidas", () => {
+  const exemplo = notificacoesConfigSchema.parse(
+    JSON.parse(fs.readFileSync("config/notificacoes.example.json", "utf8"))
+  );
+  const params = exemplo.whatsappCloud.template?.parametros ?? [];
+  assert.ok(params.length > 0, "o exemplo deve trazer um template pronto para copiar");
+  // Um parametro com nome errado so apareceria como texto vazio na mensagem
+  // entregue ao pai, entao a checagem precisa acontecer aqui.
+  for (const p of params) {
+    assert.deepEqual(variaveisDesconhecidas(`{${p}}`), [], `parametro desconhecido no template: ${p}`);
+  }
+  assert.equal(new Set(params).size, params.length, "parametro repetido no template");
+});
+
 test("modelos", () => {
   assert.deepEqual(variaveisDesconhecidas("Oi {responsavel}, {alunoo}"), ["alunoo"]);
   assert.equal(turmaLegivel("6º Série C Tarde - 2612125"), "6º Série C Tarde");
