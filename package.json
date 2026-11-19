@@ -19,7 +19,8 @@
     "consolidate": "tsx src/consolidate.ts",
     "network:probe": "tsx src/cli.ts network-probe",
     "notificar": "tsx src/notificar.ts",
-    "notificar:contatos": "tsx src/notificar.ts modelo-contatos"
+    "notificar:contatos": "tsx src/notificar.ts modelo-contatos",
+    "whatsapp:diagnostico": "tsx src/whatsapp-diagnostico.ts"
   },
   "engines": {
     "node": ">=22"

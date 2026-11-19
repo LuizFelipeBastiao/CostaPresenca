@@ -138,6 +138,8 @@ const server = http.createServer(async (req, res) => {
           tipo: i.tipo,
           status: i.status,
           presencaSemana: i.valores.presencaSemana,
+          presencaSemanaAnterior: i.valores.presencaSemanaAnterior,
+          quedaSemana: i.valores.quedaSemana,
           presencaGeral: i.valores.presencaGeral,
           responsavel: i.contato?.responsavel || "Não cadastrado",
           destino: i.destino,
@@ -456,7 +458,7 @@ function gerarHtmlDashboard(): string {
           <div class="metric-sub" id="cardDataColeta">Carregando dados...</div>
         </div>
         <div class="metric-card">
-          <div class="metric-title">Faltas na Semana</div>
+          <div class="metric-title">Quedas na Semana</div>
           <div class="metric-val" id="cardFaltasSemana" style="color: #b45309;">-</div>
           <div class="metric-sub">Abaixo de 100% no período</div>
         </div>
@@ -506,7 +508,9 @@ function gerarHtmlDashboard(): string {
               <th>Tipo</th>
               <th>Estudante</th>
               <th>Turma</th>
+              <th>Sem. Anterior</th>
               <th>Presença Sem.</th>
+              <th>Queda</th>
               <th>Presença Geral</th>
               <th>Responsável</th>
               <th>Telefone</th>
@@ -568,7 +572,7 @@ function gerarHtmlDashboard(): string {
               <th>CGM</th>
               <th>Estudante</th>
               <th>Turma</th>
-              <th>Falta na Semana</th>
+              <th>Presença na Semana</th>
               <th>Status do Contato</th>
               <th>Ação</th>
             </tr>
@@ -612,7 +616,7 @@ function gerarHtmlDashboard(): string {
     <div class="modal-box">
       <h3>Confirmar Disparo de Mensagens</h3>
       <p style="font-size: 14px; margin-bottom: 16px; color: #475569;">
-        Você está prestes a enviar as mensagens aos responsáveis dos alunos com falta.
+        Você está prestes a enviar as mensagens aos responsáveis dos alunos cuja frequência caiu nesta semana.
       </p>
       <div class="form-group">
         <label>Número para Teste Prévio (Opcional):</label>
@@ -697,7 +701,7 @@ function gerarHtmlDashboard(): string {
 
         const tbody = document.getElementById("corpoTabelaPrevia");
         if (!p.itens || p.itens.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">Nenhuma falta registrada para a semana selecionada.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 20px;">Nenhuma queda de frequência na semana selecionada.</td></tr>';
           return;
         }
 
@@ -715,7 +719,9 @@ function gerarHtmlDashboard(): string {
               <td>\${tagTipo}</td>
               <td><strong>\${i.aluno}</strong><br><small style="color: #64748b;">CGM: \${i.cgm}</small></td>
               <td>\${i.turma}</td>
+              <td style="color: #64748b;">\${i.presencaSemanaAnterior}</td>
               <td style="font-weight: 700;">\${i.presencaSemana}</td>
+              <td style="font-weight: 700; color: #b45309;">\${i.quedaSemana}</td>
               <td style="font-weight: 700; color: \${i.tipo === "critica" ? "#b91c1c" : "inherit"};">\${i.presencaGeral}</td>
               <td>\${i.responsavel}</td>
               <td>\${i.destinoMascarado}</td>
@@ -730,7 +736,7 @@ function gerarHtmlDashboard(): string {
         const semCont = p.itens.filter(x => x.status === "sem-contato");
         const tbodyPend = document.getElementById("corpoTabelaContatosPendentes");
         if (semCont.length === 0) {
-          tbodyPend.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px;">Todos os alunos com falta já possuem contato cadastrado!</td></tr>';
+          tbodyPend.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px;">Todos os alunos com queda de frequência já possuem contato cadastrado!</td></tr>';
         } else {
           tbodyPend.innerHTML = semCont.map(x => \`
             <tr>

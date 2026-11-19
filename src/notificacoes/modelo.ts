@@ -8,6 +8,7 @@ export const VARIAVEIS_MODELO = [
   "telefoneEscola",
   "presencaSemana",
   "presencaSemanaAnterior",
+  "quedaSemana",
   "presencaGeral",
   "dataReferencia"
 ] as const;

@@ -4,11 +4,11 @@ import path from "node:path";
 import { z } from "zod";
 
 const MODELO_FALTA_PADRAO =
-  "Olá, {responsavel}. Esta é uma mensagem de {escola}. Registramos que {aluno} ({turma}) teve presença de {presencaSemana} nas aulas da semana de referência ({dataReferencia}). " +
+  "Olá, {responsavel}. Esta é uma mensagem de {escola}. A frequência de {aluno} ({turma}) caiu de {presencaSemanaAnterior} na semana anterior para {presencaSemana} na semana de referência ({dataReferencia}). " +
   "Se houver justificativa, por favor entre em contato com a secretaria: {telefoneEscola}. Contamos com a parceria da família para garantir a frequência escolar.";
 
 const MODELO_CRITICA_PADRAO =
-  "Olá, {responsavel}. Esta é uma mensagem de {escola}. Precisamos da sua atenção: {aluno} ({turma}) teve presença de {presencaSemana} na semana de referência ({dataReferencia}) " +
+  "Olá, {responsavel}. Esta é uma mensagem de {escola}. Precisamos da sua atenção: a frequência de {aluno} ({turma}) caiu de {presencaSemanaAnterior} para {presencaSemana} na semana de referência ({dataReferencia}) " +
   "e a frequência geral no ano está em {presencaGeral}, abaixo do mínimo legal de 75%. Pedimos que procure a escola com urgência pelo telefone {telefoneEscola} para conversarmos.";
 
 const regrasSchema = z.object({
@@ -16,6 +16,18 @@ const regrasSchema = z.object({
   presencaSemanaAbaixoDe: z.number().min(0).max(100).default(100),
   /** Classifica como crítico quando a média geral do ano está abaixo deste valor. */
   presencaGeralCriticaAbaixoDe: z.number().min(0).max(100).default(75),
+  /**
+   * Regra central: só avisa quando a presença da semana CAIU em relação à
+   * semana anterior. Um aluno que faltou tanto quanto na semana passada (ou
+   * melhorou) não gera nova mensagem. Exige semanaReferencia = "atual", que é
+   * a única com base de comparação no CSV do Power BI.
+   */
+  exigirQuedaSemanal: z.boolean().default(true),
+  /**
+   * Queda mínima, em pontos percentuais, para disparar o aviso.
+   * 0 = qualquer queda real; 10 = só quedas de 10 pontos ou mais.
+   */
+  quedaMinimaPontos: z.number().min(0).max(100).default(0),
   /** Considera apenas matrículas com situação "Matriculado" quando a coluna existir. */
   somenteMatriculados: z.boolean().default(true),
   /**
@@ -39,7 +51,7 @@ const modelosSchema = z.object({
 });
 
 const whatsappCloudSchema = z.object({
-  apiVersion: z.string().regex(/^v\d+\.\d+$/).default("v21.0"),
+  apiVersion: z.string().regex(/^v\d+\.\d+$/).default("v25.0"),
   phoneNumberIdEnv: z.string().min(1).default("WHATSAPP_PHONE_NUMBER_ID"),
   tokenEnv: z.string().min(1).default("WHATSAPP_TOKEN"),
   /**
@@ -157,7 +169,22 @@ export async function carregarConfigNotificacoes(configPath?: string): Promise<N
   const bruto: unknown = JSON.parse(await readFile(arquivo, "utf8"));
   const config = notificacoesConfigSchema.parse(bruto);
   validarCanal(config);
+  validarRegras(config);
   return config;
+}
+
+/**
+ * A comparação com a semana anterior usa a coluna "(%) Presença Aluno SemPassada"
+ * do mesmo CSV. Com semanaReferencia = "anterior" essa coluna vira a própria
+ * semana avaliada e não sobra base de comparação, então a combinação é recusada.
+ */
+export function validarRegras(config: NotificacoesConfig): void {
+  if (config.regras.exigirQuedaSemanal && config.regras.semanaReferencia !== "atual") {
+    throw new Error(
+      'regras.exigirQuedaSemanal exige regras.semanaReferencia = "atual": o CSV do Power BI não traz a semana anterior à semana passada. ' +
+        'Use semanaReferencia "atual" ou desligue exigirQuedaSemanal.'
+    );
+  }
 }
 
 /** Garante que o canal escolhido tenha a seção de configuração correspondente. */

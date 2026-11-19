@@ -25,7 +25,7 @@ export interface Sender {
 }
 
 /** Permite apontar para um servidor de teste; em produção fica no Graph API da Meta. */
-function apiBase(): string {
+export function apiBase(): string {
   return (process.env.WHATSAPP_API_BASE ?? "https://graph.facebook.com").replace(/\/$/, "");
 }
 

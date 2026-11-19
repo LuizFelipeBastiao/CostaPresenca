@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { notificacoesConfigSchema } from "../src/notificacoes/config.js";
+import { notificacoesConfigSchema, validarRegras } from "../src/notificacoes/config.js";
 import { lerContatos, normalizarTelefone, mascararTelefone } from "../src/notificacoes/contatos.js";
 import { HistoricoEnvios, hashDestino } from "../src/notificacoes/historico.js";
 import { renderizar, turmaLegivel, nomeProprio, variaveisDesconhecidas } from "../src/notificacoes/modelo.js";
@@ -13,6 +13,7 @@ import { chaveSemanaIso, semanaDeReferencia } from "../src/notificacoes/regras.j
 
 const HEAD =
   '"NomeAluno","cgm","Turma","Idade","descrsituacaomatricula","(%) Presença Aluno MedGeral","(%) Presença Aluno","(%) Presença Aluno SemPassada","Amparo Legal Aluno Data MAX"';
+const SEPARADOR_LINHA = String.fromCharCode(10);
 const linha = (c: string[]) => c.map((v) => `"${v}"`).join(",");
 
 const CSV_PRESENCA = [
@@ -27,6 +28,23 @@ const CSV_PRESENCA = [
   linha(["EDU COSTA", "555", "9º Série B Manhã - 2612518", "14", "Matriculado", "85,00%", "0,00%", "100,00%", String(Date.UTC(2026, 9, 15))]),
   linha(["FABI ROCHA", "666", "9º Série B Manhã - 2612518", "14", "Transferido", "85,00%", "0,00%", "100,00%", ""])
 ].join("\n");
+
+// Casos que isolam a comparacao com a semana anterior.
+const CSV_QUEDA = [
+  HEAD,
+  // faltou tanto quanto na semana passada: sem piora, nao avisa
+  linha(["GIL ESTAVEL", "801", "6o A - 2612063", "12", "Matriculado", "80,00%", "80,00%", "80,00%", ""]),
+  // melhorou, ainda abaixo de 100%: nao avisa
+  linha(["HELO MELHORA", "802", "6o A - 2612063", "12", "Matriculado", "80,00%", "90,00%", "60,00%", ""]),
+  // caiu 20 pontos: avisa
+  linha(["IGOR CAIU", "803", "6o A - 2612063", "12", "Matriculado", "80,00%", "60,00%", "80,00%", ""]),
+  // caiu 2 pontos: avisa com quedaMinimaPontos=0, nao avisa com 10
+  linha(["JOAO LEVE", "804", "6o A - 2612063", "12", "Matriculado", "80,00%", "78,00%", "80,00%", ""]),
+  // sem dado da semana anterior: sem base de comparacao
+  linha(["KIM NOVATO", "805", "6o A - 2612063", "12", "Matriculado", "80,00%", "50,00%", "", ""]),
+  // ruido de ponto flutuante do Power BI: 2/3 nas duas semanas, nao e queda
+  linha(["LIA RUIDO", "806", "6o A - 2612063", "12", "Matriculado", "80,00%", "0.66670000000000007", "66,67%", ""])
+].join(SEPARADOR_LINHA);
 
 const CSV_CONTATOS = [
   "cgm;aluno;responsavel;telefone;email;consentimento",
@@ -148,10 +166,56 @@ test("aluno com falta e sem contato aparece como pendente", () => {
   assert.equal(plano.itens.length, 3);
 });
 
+test("so avisa quando a frequencia da semana caiu", () => {
+  const alunos = lerPresenca(CSV_QUEDA);
+  const semana = semanaDeReferencia(new Date(Date.UTC(2026, 9, 22)), "atual");
+  const plano = planejar(alunos, new Map(), cfg(), semana, "dry-run", null);
+
+  assert.deepEqual(plano.itens.map((i) => i.aluno.cgm).sort(), ["803", "804"]);
+  assert.equal(plano.ignorados["sem-queda"], 3); // Gil (estavel), Helo (melhorou) e Lia (ruido)
+  assert.equal(plano.ignorados["sem-dado-semana-anterior"], 1); // Kim
+
+  const igor = plano.itens.find((i) => i.aluno.cgm === "803")!;
+  assert.equal(igor.quedaSemana, 20);
+  assert.match(igor.texto, /caiu de 80% na semana anterior para 60%/);
+  // Queda maior vem primeiro na fila
+  assert.equal(plano.itens[0]!.aluno.cgm, "803");
+
+  // quedaMinimaPontos filtra oscilacoes pequenas
+  const plano2 = planejar(alunos, new Map(), cfg({ regras: { quedaMinimaPontos: 10 } }), semana, "dry-run", null);
+  assert.deepEqual(plano2.itens.map((i) => i.aluno.cgm), ["803"]);
+  assert.equal(plano2.ignorados["sem-queda"], 4); // Joao passa a ser ignorado
+
+  // Desligando a regra, volta a valer so o limiar absoluto da semana
+  const plano3 = planejar(alunos, new Map(), cfg({ regras: { exigirQuedaSemanal: false } }), semana, "dry-run", null);
+  assert.deepEqual(plano3.itens.map((i) => i.aluno.cgm).sort(), ["801", "802", "803", "804", "805", "806"]);
+  assert.equal(plano3.ignorados["sem-queda"], 0);
+  assert.equal(plano3.itens.find((i) => i.aluno.cgm === "805")!.quedaSemana, null);
+});
+
+test("queda semanal exige a semana atual como referencia", () => {
+  assert.throws(() => validarRegras(cfg({ regras: { semanaReferencia: "anterior" } })), /exigirQuedaSemanal exige/);
+  assert.doesNotThrow(() => validarRegras(cfg({ regras: { semanaReferencia: "anterior", exigirQuedaSemanal: false } })));
+});
+
+test("config de exemplo: parametros do template batem com as variaveis conhecidas", () => {
+  const exemplo = notificacoesConfigSchema.parse(
+    JSON.parse(fs.readFileSync("config/notificacoes.example.json", "utf8"))
+  );
+  const params = exemplo.whatsappCloud.template?.parametros ?? [];
+  assert.ok(params.length > 0, "o exemplo deve trazer um template pronto para copiar");
+  // Um parametro com nome errado so apareceria como texto vazio na mensagem
+  // entregue ao pai, entao a checagem precisa acontecer aqui.
+  for (const p of params) {
+    assert.deepEqual(variaveisDesconhecidas(`{${p}}`), [], `parametro desconhecido no template: ${p}`);
+  }
+  assert.equal(new Set(params).size, params.length, "parametro repetido no template");
+});
+
 test("modelos", () => {
   assert.deepEqual(variaveisDesconhecidas("Oi {responsavel}, {alunoo}"), ["alunoo"]);
   assert.equal(turmaLegivel("6º Série C Tarde - 2612125"), "6º Série C Tarde");
   assert.equal(nomeProprio("MARIA DAS DORES E SILVA"), "Maria das Dores e Silva");
-  const v = Object.fromEntries(["responsavel", "aluno", "primeiroNome", "turma", "escola", "telefoneEscola", "presencaSemana", "presencaSemanaAnterior", "presencaGeral", "dataReferencia"].map((k) => [k, k.toUpperCase()]));
+  const v = Object.fromEntries(["responsavel", "aluno", "primeiroNome", "turma", "escola", "telefoneEscola", "presencaSemana", "presencaSemanaAnterior", "quedaSemana", "presencaGeral", "dataReferencia"].map((k) => [k, k.toUpperCase()]));
   assert.equal(renderizar("{aluno}-{x}", v as never), "ALUNO-{x}");
 });
