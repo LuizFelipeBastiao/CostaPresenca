@@ -8,7 +8,7 @@ import { carregarContatos } from "./notificacoes/fontes.js";
 import { localizarCsvMaisRecente, paraCsv } from "./notificacoes/csv.js";
 import { HistoricoEnvios, hashDestino, type StatusEnvio } from "./notificacoes/historico.js";
 import { variaveisDesconhecidas } from "./notificacoes/modelo.js";
-import { formatarPercentual } from "./notificacoes/percentual.js";
+import { formatarPercentual, formatarPontos } from "./notificacoes/percentual.js";
 import { planejar, type ItemPlano, type Plano } from "./notificacoes/planejar.js";
 import { lerPresencaArquivo, type AlunoFrequencia } from "./notificacoes/presenca.js";
 import { semanaDeReferencia, type SemanaReferencia } from "./notificacoes/regras.js";
@@ -179,7 +179,9 @@ async function salvarPrevia(
     i.aluno.cgm,
     i.aluno.nome,
     i.valores.turma,
+    formatarPercentual(i.aluno.presencaSemanaAnterior),
     formatarPercentual(i.presencaSemana),
+    formatarPontos(i.quedaSemana),
     formatarPercentual(i.aluno.presencaGeral, 1),
     i.contato?.responsavel ?? "",
     i.destino ?? "",
@@ -188,7 +190,20 @@ async function salvarPrevia(
   await writeFile(
     arquivo,
     paraCsv(
-      ["status", "tipo", "cgm", "aluno", "turma", `presença semana ${semana.rotulo}`, "presença geral", "responsável", "destino", "mensagem"],
+      [
+        "status",
+        "tipo",
+        "cgm",
+        "aluno",
+        "turma",
+        "presença semana anterior",
+        `presença semana ${semana.rotulo}`,
+        "queda",
+        "presença geral",
+        "responsável",
+        "destino",
+        "mensagem"
+      ],
       linhas,
       ";"
     ),
@@ -202,15 +217,27 @@ function contar(itens: ItemPlano[], status: ItemPlano["status"]): number {
   return itens.filter((i) => i.status === status).length;
 }
 
-function imprimirResumo(plano: Plano, semana: SemanaReferencia, canal: Canal, arquivoCsv: string): void {
+function imprimirResumo(
+  plano: Plano,
+  semana: SemanaReferencia,
+  canal: Canal,
+  arquivoCsv: string,
+  regras: NotificacoesConfig["regras"]
+): void {
   const alunosComFalta = new Set(plano.itens.map((i) => i.aluno.cgm)).size;
   const criticos = new Set(plano.itens.filter((i) => i.tipo === "critica").map((i) => i.aluno.cgm)).size;
   console.log(`\nFonte: ${arquivoCsv}`);
   console.log(`Semana de referência: ${semana.rotulo} (${semana.chave}) · canal: ${canal}`);
+  console.log(
+    regras.exigirQuedaSemanal
+      ? `Regra: avisa só quem caiu ${regras.quedaMinimaPontos > 0 ? `${regras.quedaMinimaPontos} pontos ou mais ` : ""}em relação à semana anterior.`
+      : `Regra: avisa quem ficou abaixo de ${regras.presencaSemanaAbaixoDe}% na semana (comparação com a semana anterior desligada).`
+  );
   console.log(`Alunos lidos: ${plano.totalAlunos}`);
-  console.log(`Alunos com falta: ${alunosComFalta} (${criticos} com frequência geral crítica)`);
-  console.log(`  ignorados — presença ok: ${plano.ignorados["presenca-ok"]}, amparo legal: ${plano.ignorados["amparo-legal"]}, ` +
-    `sem dado: ${plano.ignorados["sem-dado-semana"]}, não matriculado: ${plano.ignorados["nao-matriculado"]}, ` +
+  console.log(`Alunos a notificar: ${alunosComFalta} (${criticos} com frequência geral crítica)`);
+  console.log(`  ignorados — presença ok: ${plano.ignorados["presenca-ok"]}, sem queda na semana: ${plano.ignorados["sem-queda"]}, ` +
+    `amparo legal: ${plano.ignorados["amparo-legal"]}, sem dado da semana: ${plano.ignorados["sem-dado-semana"]}, ` +
+    `sem semana anterior: ${plano.ignorados["sem-dado-semana-anterior"]}, não matriculado: ${plano.ignorados["nao-matriculado"]}, ` +
     `acima da idade: ${plano.ignorados["acima-idade-maxima"]}`);
   console.log(`Mensagens prontas: ${contar(plano.itens, "pronto")}`);
   console.log(`  já avisados nesta semana: ${contar(plano.itens, "ja-notificado")}`);
@@ -266,7 +293,7 @@ async function main(): Promise<number> {
   const historico = HistoricoEnvios.carregar(config.saidaDirectory);
   const plano = planejar(alunos, contatos, config, semana, config.canal, historico);
   const previa = await salvarPrevia(plano, config, semana, opcoes.execute && !opcoes.destinoTeste);
-  imprimirResumo(plano, semana, config.canal, arquivoCsv);
+  imprimirResumo(plano, semana, config.canal, arquivoCsv, config.regras);
   console.log(`\nPrévia completa (abre no Excel): ${previa}`);
 
   const prontos = plano.itens.filter((i) => i.status === "pronto");

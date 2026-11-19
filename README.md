@@ -12,8 +12,8 @@ Basta dar um duplo clique em:
 👉 **`Abrir_Painel_Escola.bat`**
 
 O servidor local será iniciado e abrirá automaticamente o navegador em `http://localhost:3000`, oferecendo:
-- **📊 Visão Geral:** Contadores de alunos lidos, faltas da semana, casos com infrequência crítica (< 75%) e mensagens prontas.
-- **💬 Prévia Interativa:** Lista completa dos alunos com faltas e o texto exato da mensagem que será enviada.
+- **📊 Visão Geral:** Contadores de alunos lidos, quedas de frequência na semana, casos com infrequência crítica (< 75%) e mensagens prontas.
+- **💬 Prévia Interativa:** Lista dos alunos cuja frequência caiu, com a semana anterior, a semana atual, a queda em pontos e o texto exato da mensagem.
 - **🚀 Disparo em 1 Clique:** Envio seguro para os responsáveis (com opção de teste prévio no seu próprio celular).
 - **👥 Cadastro de Telefones:** Formulário rápido para adicionar o telefone de pais pendentes sem editar planilhas.
 - **📋 Ficha do Conselho Tutelar:** Emissão e impressão da ficha oficial FICAI para alunos infrequentes com base na LDB e ECA.
@@ -89,6 +89,8 @@ npm run consolidate
 
 ## 💬 Sistema de Notificações aos Responsáveis
 
+**Quando o aviso sai:** apenas quando a frequência semanal do estudante **caiu** em relação à semana anterior. A verificação roda diariamente, mas um aluno cuja frequência está baixa e estável não gera mensagem repetida — só uma nova piora dispara novo aviso.
+
 O sistema cruza a presença nominal (`data/presente-alunos/presente-alunos-latest.csv`) pelo **CGM** com a base de contatos dos pais (`data/cadastros/contatos_responsaveis.csv` ou cadastros via bot de WhatsApp).
 
 ### 1. Prévia das Mensagens (Modo Seguro)
@@ -97,6 +99,10 @@ O sistema cruza a presença nominal (`data/presente-alunos/presente-alunos-lates
 npm run notificar
 ```
 Gera a conferência no terminal e grava `data/notificacoes/previa-latest.csv` para conferência no Excel antes de qualquer envio.
+
+A prévia traz a presença da semana anterior, a da semana atual e a queda em pontos, lado a lado.
+
+Quem **não** entra na lista aparece no resumo com o motivo: `sem queda na semana` (faltou igual ou melhorou), `presença ok`, `amparo legal` (falta justificada), `sem semana anterior` (sem base de comparação), `não matriculado` e `acima da idade`.
 
 Status possíveis:
 - `pronto`: mensagem pronta para disparo.
@@ -109,7 +115,7 @@ Status possíveis:
 ```powershell
 npm run notificar:contatos
 ```
-Gera a planilha `data/cadastros/contatos_pendentes.csv` com todos os alunos com falta que ainda não possuem telefone cadastrado.
+Gera a planilha `data/cadastros/contatos_pendentes.csv` com todos os alunos com queda de frequência que ainda não possuem telefone cadastrado.
 
 ### 3. Disparo das Notificações
 
@@ -129,14 +135,16 @@ Configuradas em `config/notificacoes.json`:
 
 | Opção | Padrão | Descrição |
 |:---|:---:|:---|
-| `semanaReferencia` | `atual` | `atual` usa a semana em curso; `anterior` usa a semana fechada. |
-| `presencaSemanaAbaixoDe` | `100` | Avisa quem teve presença semanal abaixo disso (100 = qualquer falta). |
+| `exigirQuedaSemanal` | `true` | **Regra central:** só avisa quem teve a presença semanal **menor que a da semana anterior**. Quem faltou igual ou melhorou não recebe nova mensagem. |
+| `quedaMinimaPontos` | `0` | Queda mínima, em pontos percentuais, para avisar. `0` = qualquer queda real; `10` = só quedas de 10 pontos ou mais. |
+| `semanaReferencia` | `atual` | `atual` usa a semana em curso; `anterior` usa a semana fechada. Com `exigirQuedaSemanal` ligado só vale `atual` — a comparação usa a coluna da semana passada do mesmo CSV. |
+| `presencaSemanaAbaixoDe` | `100` | Filtro adicional: além de ter caído, a presença precisa estar abaixo disso (100 = qualquer falta). |
 | `presencaGeralCriticaAbaixoDe` | `75` | Abaixo disso (< 75% da LDB) usa o modelo de mensagem **crítica**. |
 | `ignorarAmparoLegalDias` | `14` | Ignora quem tem Amparo Legal recente (falta justificada). |
 | `somenteMatriculados` | `true` | Descarta alunos transferidos ou desistentes. |
 
 Variáveis disponíveis para os textos das mensagens:  
-`{responsavel}` `{aluno}` `{primeiroNome}` `{turma}` `{escola}` `{telefoneEscola}` `{presencaSemana}` `{presencaGeral}` `{dataReferencia}`
+`{responsavel}` `{aluno}` `{primeiroNome}` `{turma}` `{escola}` `{telefoneEscola}` `{presencaSemana}` `{presencaSemanaAnterior}` `{quedaSemana}` `{presencaGeral}` `{dataReferencia}`
 
 ---
 
@@ -161,7 +169,7 @@ Para executar a coleta diária automaticamente (ex.: às 17:30 ao término do tu
 
 ## 🧪 Testes Automatizados
 
-Para executar os 19 testes automatizados do sistema:
+Para executar os 21 testes automatizados do sistema:
 ```powershell
 npm test
 ```

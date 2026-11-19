@@ -12,6 +12,8 @@
   "intervaloEntreEnviosMs": 1500,
   "regras": {
     "semanaReferencia": "atual",
+    "exigirQuedaSemanal": true,
+    "quedaMinimaPontos": 0,
     "presencaSemanaAbaixoDe": 100,
     "presencaGeralCriticaAbaixoDe": 75,
     "ignorarAmparoLegalDias": 14,

@@ -16,17 +16,32 @@ export interface SemanaReferencia {
 }
 
 export type Decisao =
-  | { notificar: true; tipo: TipoAviso; presencaSemana: number }
+  | {
+      notificar: true;
+      tipo: TipoAviso;
+      presencaSemana: number;
+      /** Quantos pontos percentuais a presença caiu desde a semana anterior, ou null sem base de comparação. */
+      quedaSemana: number | null;
+    }
   | { notificar: false; motivo: MotivoIgnorado };
 
 export type MotivoIgnorado =
   | "presenca-ok"
   | "sem-dado-semana"
+  | "sem-dado-semana-anterior"
+  | "sem-queda"
   | "nao-matriculado"
   | "amparo-legal"
   | "acima-idade-maxima";
 
 const DIA = 86_400_000;
+
+/**
+ * Tolerância de arredondamento em pontos percentuais. O Power BI devolve
+ * frações longas ("0.80290000000000006"), então diferenças abaixo disso são
+ * ruído de ponto flutuante, não mudança real de frequência.
+ */
+export const TOLERANCIA_PONTOS = 0.005;
 
 function inicioDoDiaUtc(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -72,13 +87,26 @@ export function avaliarAluno(aluno: AlunoFrequencia, regras: RegrasFalta, semana
   const presenca = regras.semanaReferencia === "atual" ? aluno.presencaSemanaAtual : aluno.presencaSemanaAnterior;
   if (presenca === null) return { notificar: false, motivo: "sem-dado-semana" };
   // Tolerância de arredondamento: "99,999%" do Power BI conta como 100%.
-  if (presenca >= regras.presencaSemanaAbaixoDe - 0.005) return { notificar: false, motivo: "presenca-ok" };
+  if (presenca >= regras.presencaSemanaAbaixoDe - TOLERANCIA_PONTOS) return { notificar: false, motivo: "presenca-ok" };
 
   if (regras.ignorarAmparoLegalDias > 0 && aluno.amparoLegal) {
     const limite = semana.inicio.getTime() - regras.ignorarAmparoLegalDias * DIA;
     if (aluno.amparoLegal.getTime() >= limite) return { notificar: false, motivo: "amparo-legal" };
   }
 
+  // Base de comparação: a coluna "(%) Presença Aluno SemPassada" do mesmo CSV.
+  // Só existe quando a semana de referência é a atual (ver validarRegras).
+  const anterior = regras.semanaReferencia === "atual" ? aluno.presencaSemanaAnterior : null;
+  const queda = anterior === null ? null : anterior - presenca;
+
+  if (regras.exigirQuedaSemanal) {
+    if (queda === null) return { notificar: false, motivo: "sem-dado-semana-anterior" };
+    // quedaMinimaPontos = 0 ainda exige queda real, acima do ruído de arredondamento.
+    if (queda < Math.max(regras.quedaMinimaPontos, TOLERANCIA_PONTOS)) {
+      return { notificar: false, motivo: "sem-queda" };
+    }
+  }
+
   const critica = aluno.presencaGeral !== null && aluno.presencaGeral < regras.presencaGeralCriticaAbaixoDe;
-  return { notificar: true, tipo: critica ? "critica" : "falta", presencaSemana: presenca };
+  return { notificar: true, tipo: critica ? "critica" : "falta", presencaSemana: presenca, quedaSemana: queda };
 }

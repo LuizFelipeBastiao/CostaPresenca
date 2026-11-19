@@ -18,3 +18,13 @@ export function formatarPercentual(valor: number | null, casas = 0): string {
   if (valor === null) return "sem dado";
   return `${valor.toFixed(casas).replace(".", ",")}%`;
 }
+
+/**
+ * Formata uma diferença de frequência em pontos percentuais ("12 pontos"),
+ * nunca em "%", para não confundir queda de 12 pontos com presença de 12%.
+ */
+export function formatarPontos(valor: number | null, casas = 0): string {
+  if (valor === null) return "sem dado";
+  const n = Number(valor.toFixed(casas));
+  return `${n.toFixed(casas).replace(".", ",")} ${Math.abs(n) === 1 ? "ponto" : "pontos"}`;
+}
