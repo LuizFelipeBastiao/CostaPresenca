@@ -212,6 +212,14 @@ test("config de exemplo: parametros do template batem com as variaveis conhecida
   assert.equal(new Set(params).size, params.length, "parametro repetido no template");
 });
 
+test("planilha de exemplo de contatos carrega sem avisos", () => {
+  const { contatos, avisos } = lerContatos(fs.readFileSync("config/contatos_responsaveis.example.csv", "utf8"));
+  assert.deepEqual(avisos, []);
+  assert.equal(contatos.get("123456789")?.length, 2);
+  assert.equal(contatos.get("123456789")?.[0]?.consentimento, true);
+  assert.equal(contatos.get("987654321")?.[0]?.consentimento, false);
+});
+
 test("modelos", () => {
   assert.deepEqual(variaveisDesconhecidas("Oi {responsavel}, {alunoo}"), ["alunoo"]);
   assert.equal(turmaLegivel("6º Série C Tarde - 2612125"), "6º Série C Tarde");

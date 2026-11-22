@@ -10,7 +10,7 @@ import { planejar, type Plano } from "./notificacoes/planejar.js";
 import { lerPresencaArquivo, type AlunoFrequencia } from "./notificacoes/presenca.js";
 import { semanaDeReferencia } from "./notificacoes/regras.js";
 import { criarSender } from "./notificacoes/senders/index.js";
-import { normalizarTelefone, mascararTelefone } from "./notificacoes/contatos.js";
+import { emailValido, mascararEmail, mascararTelefone, normalizarTelefone } from "./notificacoes/contatos.js";
 import { identificarCasosOrgaosCompetentes, gerarHtmlNotificacaoConselhoTutelar } from "./notificacoes/orgaos.js";
 import { consolidateMetrics } from "./consolidate.js";
 
@@ -143,7 +143,7 @@ const server = http.createServer(async (req, res) => {
           presencaGeral: i.valores.presencaGeral,
           responsavel: i.contato?.responsavel || "Não cadastrado",
           destino: i.destino,
-          destinoMascarado: i.destino ? mascararTelefone(i.destino) : "-",
+          destinoMascarado: i.destino ? (i.destino.includes("@") ? mascararEmail(i.destino) : mascararTelefone(i.destino)) : "-",
           assunto: i.assunto,
           mensagem: i.texto
         }))
@@ -153,7 +153,16 @@ const server = http.createServer(async (req, res) => {
     // 3. Execução dos Disparos
     if (pathname === "/api/notificar/executar" && method === "POST") {
       const body = await lerBodyJson(req);
-      const destinoTeste = body.destinoTeste ? normalizarTelefone(body.destinoTeste) : null;
+      const destinoTesteBruto = typeof body.destinoTeste === "string" ? body.destinoTeste.trim() : "";
+      let destinoTeste: string | null = null;
+      if (destinoTesteBruto) {
+        destinoTeste = config.canal === "smtp" ? emailValido(destinoTesteBruto) : normalizarTelefone(destinoTesteBruto);
+        if (!destinoTeste) {
+          return responderJson(res, 400, {
+            erro: `Destino de teste inválido para o canal ${config.canal}.`
+          });
+        }
+      }
       const { plano, semana, historico, mtime } = processarPlanoAtual(config);
 
       const prontos = plano.itens.filter(i => i.status === "pronto");
@@ -210,7 +219,7 @@ const server = http.createServer(async (req, res) => {
         resultados.push({
           cgm: item.aluno.cgm,
           aluno: item.valores.aluno,
-          destino: mascararTelefone(destino),
+          destino: destino.includes("@") ? mascararEmail(destino) : mascararTelefone(destino),
           status,
           erro
         });
@@ -518,7 +527,7 @@ function gerarHtmlDashboard(): string {
             </tr>
           </thead>
           <tbody id="corpoTabelaPrevia">
-            <tr><td colspan="9" style="text-align: center; padding: 20px;">Carregando prévia...</td></tr>
+            <tr><td colspan="11" style="text-align: center; padding: 20px;">Carregando prévia...</td></tr>
           </tbody>
         </table>
       </div>
