@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { notificacoesConfigSchema, validarRegras } from "../src/notificacoes/config.js";
+import { carregarEnv, notificacoesConfigSchema, validarRegras } from "../src/notificacoes/config.js";
 import { lerContatos, normalizarTelefone, mascararTelefone } from "../src/notificacoes/contatos.js";
 import { HistoricoEnvios, hashDestino } from "../src/notificacoes/historico.js";
 import { renderizar, turmaLegivel, nomeProprio, variaveisDesconhecidas } from "../src/notificacoes/modelo.js";
@@ -218,6 +218,27 @@ test("planilha de exemplo de contatos carrega sem avisos", () => {
   assert.equal(contatos.get("123456789")?.length, 2);
   assert.equal(contatos.get("123456789")?.[0]?.consentimento, true);
   assert.equal(contatos.get("987654321")?.[0]?.consentimento, false);
+});
+
+test("carregarEnv recarrega valores alterados quando sobrescrever=true", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "env-reload-"));
+  const arquivo = path.join(dir, ".env");
+  const chave = "COSTA_TESTE_RELOAD_ENV";
+  delete process.env[chave];
+  try {
+    fs.writeFileSync(arquivo, `${chave}=valor1\n`, "utf8");
+    carregarEnv(arquivo);
+    assert.equal(process.env[chave], "valor1");
+
+    fs.writeFileSync(arquivo, `\uFEFF${chave}="valor2"\n`, "utf8");
+    carregarEnv(arquivo, false);
+    assert.equal(process.env[chave], "valor1");
+
+    carregarEnv(arquivo, true);
+    assert.equal(process.env[chave], "valor2");
+  } finally {
+    delete process.env[chave];
+  }
 });
 
 test("modelos", () => {

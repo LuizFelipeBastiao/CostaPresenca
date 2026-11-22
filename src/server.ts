@@ -77,6 +77,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
+    carregarEnv(".env", true);
     const config = await carregarConfigNotificacoes();
 
     // 1. Status Geral do Sistema
@@ -634,7 +635,7 @@ function gerarHtmlDashboard(): string {
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
         <button class="btn btn-outline" onclick="fecharModalDisparo()">Cancelar</button>
-        <button class="btn btn-primary" onclick="executarDisparo()">Confirmar e Disparar</button>
+        <button class="btn btn-primary" id="btnConfirmarDisparo" onclick="executarDisparo()">Confirmar e Disparar</button>
       </div>
     </div>
   </div>
@@ -667,12 +668,14 @@ function gerarHtmlDashboard(): string {
 
   <script>
     let previaGlobal = null;
+    let toastTimer = null;
 
-    function toast(msg) {
+    function toast(msg, duracao = 4500) {
       const t = document.getElementById("toast");
       t.innerText = msg;
       t.style.display = "block";
-      setTimeout(() => { t.style.display = "none"; }, 4000);
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { t.style.display = "none"; }, duracao);
     }
 
     function trocarAba(abaId) {
@@ -825,9 +828,14 @@ function gerarHtmlDashboard(): string {
     function fecharModalDisparo() { document.getElementById("modalDisparo").classList.remove("active"); }
 
     async function executarDisparo() {
+      const btn = document.getElementById("btnConfirmarDisparo");
       const destinoTeste = document.getElementById("inputDestinoTeste").value.trim();
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Enviando...";
+      }
       fecharModalDisparo();
-      toast("Disparando notificações... Aguarde.");
+      toast("Disparando notificações... Aguarde.", 15000);
       try {
         const res = await fetch("/api/notificar/executar", {
           method: "POST",
@@ -836,13 +844,24 @@ function gerarHtmlDashboard(): string {
         });
         const r = await res.json();
         if (r.sucesso) {
-          toast("Concluído: " + r.enviados + " enviadas, " + r.falhas + " falhas (" + r.canal + ").");
+          if (r.falhas > 0) {
+            const primeiroErro = (r.resultados || []).find(x => x.erro)?.erro || "Verifique credenciais/template.";
+            toast("Concluído com falhas: " + r.enviados + " enviadas, " + r.falhas + " falhas (" + r.canal + "). Motivo: " + primeiroErro, 10000);
+          } else {
+            toast("Concluído: " + r.enviados + " enviada(s), 0 falhas (" + r.canal + ").", 6000);
+          }
           recarregarPrevia();
+          carregarHistorico();
         } else {
-          toast("Erro: " + (r.erro || "Falha"));
+          toast("Erro: " + (r.erro || "Falha"), 9000);
         }
       } catch (e) {
-        toast("Erro ao disparar: " + e.message);
+        toast("Erro ao disparar: " + e.message, 9000);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = "Confirmar e Disparar";
+        }
       }
     }
 

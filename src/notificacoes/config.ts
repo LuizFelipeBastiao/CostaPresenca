@@ -141,21 +141,27 @@ export type Canal = (typeof CANAIS)[number];
 export const CONFIG_PADRAO = "config/notificacoes.json";
 export const CONFIG_EXEMPLO = "config/notificacoes.example.json";
 
-/** Carrega variáveis de .env (sem sobrescrever o ambiente já definido). */
-export function carregarEnv(arquivo = ".env"): void {
+/**
+ * Carrega variáveis de .env. Por padrão não sobrescreve variáveis já definidas
+ * no ambiente; passe sobrescrever=true para recarregar alterações em disco
+ * (ex.: quando o operador atualiza o .env com o painel web aberto).
+ */
+export function carregarEnv(arquivo = ".env", sobrescrever = false): void {
   const caminho = path.resolve(arquivo);
   if (!fs.existsSync(caminho)) return;
-  const loader = (process as unknown as { loadEnvFile?: (p: string) => void }).loadEnvFile;
-  if (typeof loader === "function") {
-    loader.call(process, caminho);
-    return;
+  if (!sobrescrever) {
+    const loader = (process as unknown as { loadEnvFile?: (p: string) => void }).loadEnvFile;
+    if (typeof loader === "function") {
+      loader.call(process, caminho);
+      return;
+    }
   }
-  for (const linha of fs.readFileSync(caminho, "utf8").split(/\r?\n/)) {
+  for (const linha of fs.readFileSync(caminho, "utf8").replace(/^\uFEFF/, "").split(/\r?\n/)) {
     const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(linha);
     if (!m) continue;
     const chave = m[1]!;
-    if (process.env[chave] !== undefined) continue;
-    process.env[chave] = m[2]!.replace(/^(['"])(.*)\1$/, "$2");
+    if (!sobrescrever && process.env[chave] !== undefined) continue;
+    process.env[chave] = m[2]!.trim().replace(/^(['"])(.*)\1$/, "$2");
   }
 }
 
