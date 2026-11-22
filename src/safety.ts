@@ -7,8 +7,22 @@ export const FORBIDDEN_MENU_ACTIONS = [
   "Publicar na Web"
 ] as const;
 
+/** Páginas de login da Microsoft: o Power BI redireciona para cá quando a sessão salva expira. */
+const LOGIN_HOSTS = ["login.microsoftonline.com", "login.live.com", "login.windows.net", "account.microsoft.com"];
+
+export class SessaoExpiradaError extends Error {
+  constructor() {
+    super(
+      "Sessao do Power BI expirou (o navegador foi mandado para a tela de login da Microsoft). " +
+      "Rode `npm run login -- --config config/local.json`, entre com a conta institucional e tente a coleta de novo."
+    );
+    this.name = "SessaoExpiradaError";
+  }
+}
+
 export function assertAllowedUrl(rawUrl: string, allowedHosts: string[]): void {
   const url = new URL(rawUrl);
+  if (LOGIN_HOSTS.includes(url.hostname)) throw new SessaoExpiradaError();
   if (url.protocol !== "https:") throw new Error("Apenas HTTPS e permitido");
   if (!allowedHosts.includes(url.hostname)) {
     throw new Error(`Dominio nao autorizado: ${url.hostname}`);
@@ -27,6 +41,7 @@ export async function assertExpectedPage(
       timeout: 90_000
     });
   } catch {
+    assertAllowedUrl(page.url(), allowedHosts); // se caiu no login durante a espera, avisa isso
     throw new Error(`Relatorio esperado nao encontrado apos aguardar carregamento: ${expectedName}`);
   }
   assertAllowedUrl(page.url(), allowedHosts);

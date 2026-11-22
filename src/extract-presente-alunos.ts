@@ -1,12 +1,42 @@
 import fs from "node:fs";
 import path from "node:path";
+import { dataLocal } from "./datas.js";
 import { randomUUID } from "node:crypto";
 import { loadConfig, getReport } from "./config.js";
 import { launchAuthorizedContext } from "./browser.js";
 import { assertAllowedUrl, assertExpectedPage, saveErrorDiagnostic } from "./safety.js";
 import { appendAudit } from "./storage.js";
-import { applyConfiguredFilters, clickBookmarkButton, tryDismissMicrosoftPopups } from "./powerbi/filters.js";
-import { decodeDsrPayload } from "./powerbi/dsr-decoder.js";
+import {
+  applyConfiguredFilters,
+  canonico,
+  clickBookmarkButton,
+  tryDismissMicrosoftPopups,
+  unlockBookmarkAndScope
+} from "./powerbi/filters.js";
+import { decodeDsrPayload, type DsrTableResult } from "./powerbi/dsr-decoder.js";
+import { aguardarCapturas } from "./powerbi/network-interceptor.js";
+
+/**
+ * Última garantia de escopo: se a tabela tiver uma coluna de escola, mantém só as linhas
+ * da escola configurada, mesmo que algum filtro da tela não tenha sido aplicado.
+ */
+export function filtrarPelaEscola(tabela: DsrTableResult, escolaNome: string): DsrTableResult {
+  const exata = tabela.headers.findIndex((h) => canonico(h) === "ESCOLA");
+  const coluna = exata >= 0 ? exata : tabela.headers.findIndex((h) => canonico(h).includes("ESCOLA"));
+  if (coluna < 0) return tabela;
+
+  const alvo = canonico(escolaNome);
+  const rows = tabela.rows.filter((r) => canonico(r.cells[coluna] ?? "").includes(alvo));
+  if (rows.length === 0) {
+    throw new Error(
+      `Nenhuma linha da escola "${escolaNome}" na tabela capturada (${tabela.rows.length} linhas de outras escolas).`
+    );
+  }
+  if (rows.length < tabela.rows.length) {
+    console.warn(`[AVISO] Removidas ${tabela.rows.length - rows.length} linha(s) de outras escolas.`);
+  }
+  return { headers: tabela.headers, rows };
+}
 
 export async function extractPresenteAlunos(): Promise<{
   totalAlunos: number;
@@ -54,24 +84,35 @@ export async function extractPresenteAlunos(): Promise<{
     await page.waitForTimeout(config.settleMs);
     await assertExpectedPage(page, report.name, config.allowedHosts);
 
-    console.log(`[2/4] Aplicando escopo de NRE (FOZ DO IGUACU)...`);
-    await applyConfiguredFilters(page, report);
-    await page.waitForTimeout(4_000);
+    if (report.filters.length > 0) {
+      console.log(`[2/4] Aplicando ${report.filters.length} filtro(s) configurado(s)...`);
+      await applyConfiguredFilters(page, report);
+      await page.waitForTimeout(config.settleMs);
+    } else {
+      console.log(`[2/4] Nenhum filtro extra configurado para este relatório.`);
+    }
 
     console.log(`[3/4] Clicando no botão analítico TURMA dinamicamente...`);
     capturedAlunoPayloads.length = 0;
-    await clickBookmarkButton(page, "TURMA");
+    if (!(await clickBookmarkButton(page, "TURMA"))) {
+      throw new Error('Botão "TURMA" não encontrado no relatório Presente Estadual.');
+    }
+    await page.waitForTimeout(config.settleMs);
+
+    // O bookmark TURMA pode trazer filtros próprios; o escopo vem depois dele (como no Pré-Conselho).
+    console.log(`[3/4] Aplicando escopo institucional (${config.context.nre} / ${config.context.escolaNome})...`);
+    await unlockBookmarkAndScope(page, config.context);
 
     console.log(`[4/4] Aguardando interceptação da tabela nominal com CGM...`);
-    await page.waitForTimeout(10_000);
+    await aguardarCapturas(page, capturedAlunoPayloads, { timeoutMs: 30_000, silencioMs: 4_000 });
 
     if (capturedAlunoPayloads.length === 0) {
       throw new Error("Nenhum payload analítico de alunos foi interceptado na resposta da aba TURMA.");
     }
 
-    // Decodifica a tabela
+    // Decodifica a tabela (a última resposta reflete o estado final dos filtros)
     const bestPayload = capturedAlunoPayloads[capturedAlunoPayloads.length - 1]!;
-    const decoded = decodeDsrPayload(bestPayload);
+    const decoded = filtrarPelaEscola(decodeDsrPayload(bestPayload), config.context.escolaNome);
 
     const outDir = path.join(config.outputDirectory, "presente-alunos");
     if (!fs.existsSync(outDir)) {
@@ -94,7 +135,7 @@ export async function extractPresenteAlunos(): Promise<{
     fs.writeFileSync(latestCsvPath, csvContent, "utf8");
 
     // Partição histórica diária
-    const dateFolder = new Date().toISOString().slice(0, 10);
+    const dateFolder = dataLocal();
     const dailyHistoryDir = path.resolve(config.outputDirectory, "historico", dateFolder);
     if (!fs.existsSync(dailyHistoryDir)) fs.mkdirSync(dailyHistoryDir, { recursive: true });
     fs.writeFileSync(path.join(dailyHistoryDir, "presente-alunos.csv"), csvContent, "utf8");
