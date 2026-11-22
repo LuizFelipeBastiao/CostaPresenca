@@ -4,22 +4,38 @@ Solução auditável para automação do acompanhamento da frequência escolar, 
 
 ---
 
-## 🚀 Como Iniciar com 2 Cliques (Interface Gráfica)
+## 🚀 Como Rodar Tudo de Uma Vez (1 único `.bat`)
 
-Não é necessário usar comandos no terminal para a rotina diária da escola.
+Não é necessário decorar comandos no terminal nem abrir vários scripts separados. Todos os atalhos foram unificados em um único arquivo:
 
-Basta dar um duplo clique em:
-👉 **`Abrir_Painel_Escola.bat`**
+👉 **`CostaPresenca.bat`**
 
-O servidor local será iniciado e abrirá automaticamente o navegador em `http://localhost:3000`, oferecendo:
-- **📊 Visão Geral:** Contadores de alunos lidos, quedas de frequência na semana, casos com infrequência crítica (< 75%) e mensagens prontas.
-- **💬 Prévia Interativa:** Lista dos alunos cuja frequência caiu, com a semana anterior, a semana atual, a queda em pontos e o texto exato da mensagem.
-- **🚀 Disparo em 1 Clique:** Envio seguro para os responsáveis (com opção de teste prévio no seu próprio celular).
-- **👥 Cadastro de Telefones:** Formulário rápido para adicionar o telefone de pais pendentes sem editar planilhas.
-- **📋 Ficha do Conselho Tutelar:** Emissão e impressão da ficha oficial FICAI para alunos infrequentes com base na LDB e ECA.
-- **📜 Histórico Auditável:** Registro de todos os envios e confirmações de entrega.
+Com um **duplo clique** em `CostaPresenca.bat`, ele executa tudo em sequência automaticamente:
+1. **Prepara o ambiente:** verifica Node.js, instala dependências na primeira execução (`npm install`) e cria os arquivos locais de configuração a partir dos modelos se ainda não existirem;
+2. **Coleta dados do Power BI:** se `config/local.json` e o login institucional já estiverem configurados, coleta automaticamente os relatórios e a lista nominal de presença (caso contrário, segue com os CSVs locais);
+3. **Consolida relatórios:** atualiza o resumo executivo e o Painel de Busca Ativa;
+4. **Gera a prévia segura:** calcula as quedas semanais de frequência e prepara as mensagens (sem enviar nada automaticamente);
+5. **Abre o Painel Web da Secretaria** automaticamente no navegador em `http://localhost:3000`, oferecendo:
+   - **📊 Visão Geral:** Contadores de alunos lidos, quedas de frequência na semana, casos com infrequência crítica (< 75%) e mensagens prontas.
+   - **💬 Prévia Interativa:** Lista dos alunos cuja frequência caiu, com a semana anterior, a semana atual, a queda em pontos e o texto exato da mensagem.
+   - **🚀 Disparo em 1 Clique:** Envio seguro para os responsáveis (com opção de teste prévio no seu próprio celular).
+   - **👥 Cadastro de Telefones:** Formulário rápido para adicionar o telefone de pais pendentes sem editar planilhas.
+   - **📋 Ficha do Conselho Tutelar:** Emissão e impressão da ficha oficial FICAI para alunos infrequentes com base na LDB e ECA.
+   - **📜 Histórico Auditável:** Registro de todos os envios e confirmações de entrega.
 
-*(Se preferir abrir pelo terminal: `npm start` ou `npm run ui`)*.
+### Opções extras do `CostaPresenca.bat` (via terminal, opcional)
+
+| Comando | O que faz |
+|:---|:---|
+| `CostaPresenca.bat` | **Padrão (duplo clique):** roda tudo de uma vez e abre o Painel Web |
+| `CostaPresenca.bat --painel` | Abre direto o Painel Web (`http://localhost:3000`) sem rodar a coleta |
+| `CostaPresenca.bat --coleta` | Roda apenas coleta + consolidação + prévia e encerra (usado no agendamento) |
+| `CostaPresenca.bat --agendar [HH:MM]` | Cria a tarefa agendada diária no Windows (padrão `17:30`) |
+| `CostaPresenca.bat --login` | Abre o Edge para fazer login institucional e MFA no Power BI |
+| `CostaPresenca.bat --diagnostico` | Confere credenciais, número e template da WhatsApp Cloud API |
+| `CostaPresenca.bat --ajuda` | Mostra todas as opções disponíveis |
+
+*(Se preferir abrir somente o painel pelo Node/npm: `npm start` ou `npm run ui`)*.
 
 ---
 
@@ -54,7 +70,11 @@ npx playwright install chromium
 Copy-Item config/reports.example.json config/local.json
 Copy-Item config/notificacoes.example.json config/notificacoes.json
 Copy-Item .env.example .env
+New-Item -ItemType Directory -Force data/cadastros
+Copy-Item config/contatos_responsaveis.example.csv data/cadastros/contatos_responsaveis.csv
 ```
+
+*(Observação: ao dar duplo clique em `CostaPresenca.bat`, os passos `npm install` e cópia de `local.json`, `notificacoes.json` e `.env` já são feitos automaticamente caso ainda não existam.)*
 
 ---
 
@@ -83,7 +103,7 @@ npm run collect:all
 npm run consolidate
 ```
 
-*(Dica: você pode rodar a esteira completa com um duplo clique no arquivo `executar_coleta.bat`).*
+*(Dica: você pode rodar a esteira completa de uma vez dando duplo clique em `CostaPresenca.bat`, ou sem abrir o navegador com `CostaPresenca.bat --coleta`).*
 
 ---
 
@@ -246,14 +266,18 @@ Contas sem verificação de empresa também têm um teto de **conversas iniciada
 ## ⏰ Agendamento Automático no Windows
 
 Para executar a coleta diária automaticamente (ex.: às 17:30 ao término do turno escolar):
-- Dê um duplo clique em **`agendar_tarefa_diaria.bat`**.
-- O assistente criará uma tarefa no Agendador de Tarefas do Windows (`schtasks`) para executar a coleta todos os dias úteis.
+```powershell
+.\CostaPresenca.bat --agendar
+# ou informando o horário direto:
+.\CostaPresenca.bat --agendar 17:30
+```
+- O assistente criará uma tarefa no Agendador de Tarefas do Windows (`schtasks`) chamando `CostaPresenca.bat --coleta` todos os dias no horário configurado (sem abrir o navegador).
 
 ---
 
 ## 🧪 Testes Automatizados
 
-Para executar os 21 testes automatizados do sistema:
+Para executar os 23 testes automatizados do sistema:
 ```powershell
 npm test
 ```
