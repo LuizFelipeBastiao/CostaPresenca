@@ -38,6 +38,18 @@ export function filtrarPelaEscola(tabela: DsrTableResult, escolaNome: string): D
   return { headers: tabela.headers, rows };
 }
 
+/** Espera até passar `silencioMs` sem nenhuma consulta nova do Power BI (ou até `timeoutMs`). */
+async function esperarSilencio(
+  page: import("playwright").Page,
+  ultima: () => number,
+  { silencioMs, timeoutMs }: { silencioMs: number; timeoutMs: number }
+): Promise<void> {
+  const inicio = Date.now();
+  while (Date.now() - inicio < timeoutMs && Date.now() - ultima() < silencioMs) {
+    await page.waitForTimeout(250);
+  }
+}
+
 export async function extractPresenteAlunos(): Promise<{
   totalAlunos: number;
   csvPath: string;
@@ -59,12 +71,15 @@ export async function extractPresenteAlunos(): Promise<{
   const page = (await context.pages())[0] ?? (await context.newPage());
 
   const capturedAlunoPayloads: any[] = [];
+  // Momento da última consulta do Power BI: serve para saber quando o relatório parou de carregar.
+  let ultimaConsulta = Date.now();
   const onResponse = async (response: import("playwright").Response) => {
     const url = response.url();
     if (
       (url.includes("QueryExecutionService") || url.includes("public/query") || url.includes("querydata")) &&
       response.request().method() === "POST"
     ) {
+      ultimaConsulta = Date.now();
       try {
         const json = await response.json();
         const bodyStr = JSON.stringify(json);
@@ -92,10 +107,26 @@ export async function extractPresenteAlunos(): Promise<{
       console.log(`[2/4] Nenhum filtro extra configurado para este relatório.`);
     }
 
-    console.log(`[3/4] Clicando no botão analítico TURMA dinamicamente...`);
-    capturedAlunoPayloads.length = 0;
-    if (!(await clickBookmarkButton(page, "TURMA"))) {
-      throw new Error('Botão "TURMA" não encontrado no relatório Presente Estadual.');
+    // Clicar no TURMA enquanto o relatório ainda carrega não tem efeito: o Power BI termina de
+    // aplicar a visão padrão (REDE) por cima. Espera as consultas iniciais pararem antes.
+    console.log(`[3/4] Aguardando o relatório terminar de carregar...`);
+    await esperarSilencio(page, () => ultimaConsulta, { silencioMs: 5_000, timeoutMs: 90_000 });
+
+    let turmaCarregou = false;
+    for (let tentativa = 1; tentativa <= 3 && !turmaCarregou; tentativa += 1) {
+      console.log(`[3/4] Clicando no botão TURMA (tentativa ${tentativa}/3)...`);
+      capturedAlunoPayloads.length = 0;
+      if (!(await clickBookmarkButton(page, "TURMA"))) {
+        throw new Error('Botão "TURMA" não encontrado no relatório Presente Estadual.');
+      }
+      // A visão TURMA dispara uma consulta com NomeAluno/cgm; sem ela, o clique não pegou.
+      const limite = Date.now() + 25_000;
+      while (Date.now() < limite && capturedAlunoPayloads.length === 0) await page.waitForTimeout(500);
+      turmaCarregou = capturedAlunoPayloads.length > 0;
+      if (!turmaCarregou) {
+        console.warn(`[AVISO] A visão TURMA não carregou a lista de alunos; tentando de novo.`);
+        await esperarSilencio(page, () => ultimaConsulta, { silencioMs: 3_000, timeoutMs: 30_000 });
+      }
     }
     await page.waitForTimeout(config.settleMs);
 
@@ -104,6 +135,8 @@ export async function extractPresenteAlunos(): Promise<{
     await unlockBookmarkAndScope(page, config.context);
 
     console.log(`[4/4] Aguardando interceptação da tabela nominal com CGM...`);
+    // O escopo dispara consultas novas; só a última, já filtrada pela escola, vale.
+    await esperarSilencio(page, () => ultimaConsulta, { silencioMs: 5_000, timeoutMs: 60_000 });
     await aguardarCapturas(page, capturedAlunoPayloads, { timeoutMs: 30_000, silencioMs: 4_000 });
 
     if (capturedAlunoPayloads.length === 0) {

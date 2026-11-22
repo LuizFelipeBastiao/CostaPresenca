@@ -20,6 +20,7 @@ Com um **duplo clique** em `CostaPresenca.bat`, ele executa tudo em sequência a
    - **💬 Prévia Interativa:** Lista dos alunos cuja frequência caiu, com a semana anterior, a semana atual, a queda em pontos e o texto exato da mensagem.
    - **🚀 Disparo em 1 Clique:** Envio seguro para os responsáveis (com opção de teste prévio no seu próprio celular).
    - **👥 Cadastro de Telefones:** Formulário rápido para adicionar o telefone de pais pendentes sem editar planilhas.
+   - **🎟️ Bilhetes do WhatsApp:** Quantos alunos já têm responsável cadastrado pelo bot e o botão que abre os bilhetes (código + QR) para imprimir, por turma ou só de quem ainda falta.
    - **📋 Ficha do Conselho Tutelar:** Emissão e impressão da ficha oficial FICAI para alunos infrequentes com base na LDB e ECA.
    - **📜 Histórico Auditável:** Registro de todos os envios e confirmações de entrega.
 
@@ -33,6 +34,9 @@ Com um **duplo clique** em `CostaPresenca.bat`, ele executa tudo em sequência a
 | `CostaPresenca.bat --agendar [HH:MM]` | Cria a tarefa agendada diária no Windows (padrão `17:30`) |
 | `CostaPresenca.bat --login` | Abre o Edge para fazer login institucional e MFA no Power BI |
 | `CostaPresenca.bat --diagnostico` | Confere credenciais, número e template da WhatsApp Cloud API |
+| `CostaPresenca.bat --bot` | Liga só o bot que cadastra os pais pelo WhatsApp (porta 3001). O duplo clique normal já liga o bot e o túnel sozinho |
+| `Entrar no Power BI.bat` | Duplo clique: abre o Edge para o login institucional (MFA) quando a sessão do Power BI expira |
+| `Agendar atualizacao diaria.bat` | Duplo clique: cria a tarefa do Windows que coleta os dados todo dia (rodar uma vez por computador) |
 | `CostaPresenca.bat --ajuda` | Mostra todas as opções disponíveis |
 
 *(Se preferir abrir somente o painel pelo Node/npm: `npm start` ou `npm run ui`)*.
@@ -249,6 +253,108 @@ Com tudo verde, mude `"canal": "whatsapp-cloud"` em `config/notificacoes.json` e
 Ou seja: o bot de cadastro cabe no limite gratuito; os avisos de falta não. Com ~200 avisos por semana, a tarifa de utilidade no Brasil costuma ficar na casa de poucos centavos por mensagem — **confirme o valor atual em WhatsApp Manager → Insights**, porque a Meta muda os preços periodicamente.
 
 Contas sem verificação de empresa também têm um teto de **conversas iniciadas pela escola por dia**. Se a escola tiver mais responsáveis que esse teto, é preciso concluir a verificação do negócio no Meta Business.
+
+---
+
+## 🤖 Bot de Cadastro dos Pais pelo WhatsApp
+
+O telefone do responsável entra no sistema **sem a secretaria digitar nada**: a escola entrega um bilhete com um código por aluno, o pai manda `CADASTRAR K7P-4Q2` para o WhatsApp da escola e o bot responde confirmando. A partir daí, aquele número recebe os avisos de queda de frequência daquele aluno.
+
+- O código impede que alguém cadastre o próprio número no aluno de outra família. São 5 erros por dia por número; depois disso o número fica bloqueado até o dia seguinte.
+- Cada aluno aceita até 3 responsáveis (`maxResponsaveisPorAluno`). Um responsável com vários filhos manda um código de cada vez.
+- O pai pode mandar `STATUS` para ver os próprios cadastros e `SAIR` para parar de receber avisos.
+- O número fica gravado **exatamente como o WhatsApp informa** (`wa_id`), que é o formato que a Meta aceita no envio. Isso evita o problema do 9º dígito dos celulares brasileiros.
+- Com `"aprovacaoManual": true`, o cadastro fica pendente até a secretaria aprovar (`npm run cadastro -- pendentes` / `aprovar <CGM>`).
+
+### 1. Configuração
+
+Em `config/notificacoes.json`:
+
+```json
+"fonteContatos": "ambos",
+"cadastro": {
+  "numeroWhatsappEscola": "(45) 99999-0000",
+  "aprovacaoManual": false
+}
+```
+
+`fonteContatos: "ambos"` soma os pais cadastrados pelo bot aos telefones da planilha e do painel. O padrão (`"cadastros"`) usa **só** o bot.
+
+No `.env`:
+
+```
+WHATSAPP_VERIFY_TOKEN=uma-senha-que-voces-inventam
+WHATSAPP_APP_SECRET=valor de App settings > Basic > App Secret
+```
+
+`WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID` são os mesmos do envio de avisos.
+
+### 2. Imprimir os bilhetes
+
+**Pelo painel (sem comandos):** aba **🎟️ Bilhetes do WhatsApp** → escolha a turma (ou todas) → **Abrir bilhetes para imprimir** → **Imprimir**. Marque "Só alunos que ainda não têm responsável" para mandar de novo só para quem falta.
+
+**Pelo terminal:**
+
+```powershell
+npm run cadastro -- bilhetes                       # todos os alunos matriculados
+npm run cadastro -- bilhetes --turma "6º Série A"  # só uma turma
+npm run cadastro -- bilhetes --sem-cadastro        # só quem ainda não tem responsável
+```
+
+O comando lê o CSV de presença mais recente, cria um código para cada aluno e reaproveita os que já existem. O resultado fica em `data/cadastros/bilhetes.html`: abra no navegador e imprima com Ctrl+P (são 8 bilhetes por folha A4). Cada bilhete tem um **QR code** que abre o WhatsApp com a mensagem já digitada; o pai só precisa tocar em Enviar.
+
+Outros comandos da secretaria:
+
+```powershell
+npm run cadastro -- novo-codigo 123456789   # bilhete perdido: invalida o código antigo
+npm run cadastro -- resumo                  # quantos alunos já têm responsável cadastrado
+npm run cadastro -- pendentes               # (aprovacaoManual) quem aguarda aprovação
+npm run cadastro -- aprovar 123456789       # ou: aprovar --todos
+npm run cadastro -- recusar 123456789
+```
+
+### 3. Expor o bot na internet (túnel)
+
+A Meta só entrega mensagens numa URL **HTTPS pública**. O bot roda no PC da escola e escuta apenas em `localhost:3001`. Um túnel publica **somente** essa porta; o painel (porta 3000) continua acessível só no PC.
+
+Com o **ngrok**, a conta gratuita já vem com um endereço fixo (`algo.ngrok-free.dev`) que não muda ao reiniciar:
+
+```powershell
+ngrok config add-authtoken <seu token do painel do ngrok>
+ngrok http 3001
+```
+
+Outra opção é o Cloudflare Tunnel. O modo rápido (`cloudflared tunnel --url http://localhost:3001`) gera um endereço novo a cada execução, e aí a Callback URL na Meta precisa ser atualizada toda vez. Para usar o Cloudflare de forma permanente, é preciso um *named tunnel* com domínio próprio.
+
+### 4. Ligar o bot
+
+O duplo clique no `CostaPresenca.bat` já liga o bot e o túnel ngrok em duas janelas minimizadas ("CostaPresenca - Bot WhatsApp" e "CostaPresenca - Tunel ngrok"), desde que `WHATSAPP_APP_SECRET` esteja no `.env` e o `ngrok.exe` esteja na pasta do projeto (ou instalado no PATH). Se já estiverem rodando, ele não abre de novo. Para ligar só o bot pelo terminal:
+
+```powershell
+npm run bot              # ou: CostaPresenca.bat --bot
+npm run bot -- --simular # testa sem enviar respostas (mostra no terminal)
+```
+
+Deixe a janela aberta. O bot só responde enquanto o PC, o bot e o túnel estiverem ligados. Se estiverem desligados, a Meta reenvia a mensagem por algum tempo. Mas a resposta gratuita ao pai só é aceita em até 24h depois da mensagem dele, então mensagens mais antigas são cadastradas sem resposta (o erro aparece no log).
+
+### 5. Configurar o webhook na Meta
+
+Em **Meta for Developers → seu app → WhatsApp → Configuration** (em apps criados pelo caso de uso "Conectar com clientes pelo WhatsApp", fica em *Use cases → Customize → Configuration*):
+
+1. **Callback URL:** `https://<endereço-do-túnel>/webhook`
+2. **Verify token:** o mesmo valor de `WHATSAPP_VERIFY_TOKEN`
+3. Clique em **Verify and save**. A Meta faz um GET no bot e o terminal mostra `verificacao-ok`.
+4. Em **Webhook fields**, assine o campo **messages**. Sem essa assinatura, a verificação passa mas nenhuma mensagem chega.
+
+Mande `oi` do seu celular para o número da escola: o bot deve responder com as instruções de cadastro.
+
+**Se as mensagens não chegarem:**
+- Confira se o app está publicado (modo *Live*). Em modo de desenvolvimento, só os números de teste cadastrados no app falam com o bot.
+- A conta do WhatsApp Business (WABA) precisa estar inscrita no app:
+  `curl -X POST "https://graph.facebook.com/v25.0/<WHATSAPP_WABA_ID>/subscribed_apps" -H "Authorization: Bearer <WHATSAPP_TOKEN>"`
+- `assinatura-invalida` no terminal quer dizer que `WHATSAPP_APP_SECRET` está errado.
+
+Cada mensagem tratada vira uma linha em `data/cadastros/bot.jsonl`, com o telefone mascarado e sem o texto da mensagem. A base de cadastros fica em `data/cadastros/cadastros.json`, fora do Git.
 
 ---
 

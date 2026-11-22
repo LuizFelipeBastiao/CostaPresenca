@@ -37,8 +37,12 @@ if errorlevel 1 (
 )
 
 rem 2. Preparacao automatica na primeira execucao
-if not exist "node_modules" (
-    echo [SETUP] Pasta node_modules nao encontrada. Instalando dependencias...
+rem    (o pacote qrcode entrou depois: quem ja tinha node_modules precisa reinstalar)
+set "PRECISA_INSTALAR=0"
+if not exist "node_modules" set "PRECISA_INSTALAR=1"
+if not exist "node_modules\qrcode" set "PRECISA_INSTALAR=1"
+if "%PRECISA_INSTALAR%"=="1" (
+    echo [SETUP] Instalando dependencias ^(npm install^)...
     call npm install
     if errorlevel 1 (
         echo [ERRO] Falha ao instalar dependencias com npm install.
@@ -66,6 +70,7 @@ if not exist ".env" if exist ".env.example" (
 rem 3. Despacha modos especiais por argumento
 if /i "%MODO%"=="--login" goto :LOGIN
 if /i "%MODO%"=="--diagnostico" goto :DIAGNOSTICO
+if /i "%MODO%"=="--bot" goto :BOT
 if /i "%MODO%"=="--painel" goto :ABRIR_PAINEL
 if /i "%MODO%"=="--coleta" (
     set "MODO_COLETA_ONLY=1"
@@ -91,25 +96,38 @@ if exist "config\local.json" if exist ".auth\powerbi-profile" (
 
 if not "%RODAR_POWERBI%"=="1" goto :PULAR_POWERBI
 
-echo [1/5] Coleta de todos os relatorios habilitados do Power BI...
-call npm run collect:all
-if errorlevel 1 echo [AVISO] Falha na coleta de relatorios. Prosseguindo com os dados locais...
+findstr /r /c:"\"enabled\": *true" "config\local.json" >nul 2>&1
+if errorlevel 1 (
+    echo [1/5] Nenhum relatorio generico habilitado em config\local.json. Pulando.
+) else (
+    echo [1/5] Coleta de todos os relatorios habilitados do Power BI...
+    call npm run collect:all
+    if errorlevel 1 echo [AVISO] Falha na coleta de relatorios. Prosseguindo com os dados locais...
+)
 
 echo.
-echo [2/5] Extracao analitica do Pre-Conselho...
-call npm run collect:pre-conselho
-if errorlevel 1 echo [AVISO] Falha na extracao do Pre-Conselho. Prosseguindo...
+findstr /c:"aprendizagem-parana" "config\local.json" >nul 2>&1
+if errorlevel 1 (
+    echo [2/5] Relatorio Aprendizagem Parana nao configurado em config\local.json. Pulando o Pre-Conselho.
+) else (
+    echo [2/5] Extracao analitica do Pre-Conselho...
+    call npm run collect:pre-conselho
+    if errorlevel 1 echo [AVISO] Falha na extracao do Pre-Conselho. Prosseguindo...
+)
 
 echo.
 echo [3/5] Extracao nominal de presenca e faltas...
 call npm run collect:presente-alunos
-if errorlevel 1 echo [AVISO] Falha na extracao de presenca nominal. Prosseguindo...
+if errorlevel 1 (
+    echo [AVISO] Falha na extracao de presenca nominal. Prosseguindo com os dados anteriores...
+    echo         Se o Power BI pediu login, de dois cliques em "Entrar no Power BI.bat" e depois rode de novo.
+)
 goto :APOS_POWERBI
 
 :PULAR_POWERBI
 echo [1-3/5] Coleta do Power BI ignorada ^(config\local.json ou login institucional ainda nao configurados^).
 echo         Usando os arquivos CSV locais ja existentes em data\.
-echo         Para ativar a coleta automatica, configure config\local.json e rode: CostaPresenca.bat --login
+echo         Para ativar a coleta automatica, configure config\local.json e de dois cliques em "Entrar no Power BI.bat".
 
 :APOS_POWERBI
 echo.
@@ -131,6 +149,7 @@ if "%MODO_COLETA_ONLY%"=="1" (
 )
 
 :ABRIR_PAINEL
+call :LIGAR_BOT
 echo.
 echo ============================================================
 echo   INICIANDO PAINEL WEB DA SECRETARIA (http://localhost:3000)
@@ -146,6 +165,38 @@ call npm start
 pause
 exit /b 0
 
+:LIGAR_BOT
+rem Liga o bot de cadastro e o tunel ngrok em janelas minimizadas, se estiverem
+rem configurados e ainda nao estiverem rodando. Assim ninguem precisa digitar comandos.
+findstr /r /c:"^WHATSAPP_APP_SECRET=[0-9a-zA-Z]" ".env" >nul 2>&1
+if errorlevel 1 (
+    echo [BOT] Bot do WhatsApp nao configurado ^(WHATSAPP_APP_SECRET vazio no .env^). Pulando.
+    exit /b 0
+)
+netstat -ano | findstr /r /c:":3001 .*LISTENING" >nul 2>&1
+if errorlevel 1 (
+    echo [BOT] Ligando o bot do WhatsApp ^(janela minimizada "CostaPresenca - Bot WhatsApp"^)...
+    start "CostaPresenca - Bot WhatsApp" /min cmd /k "npm run bot"
+) else (
+    echo [BOT] O bot do WhatsApp ja esta ligado.
+)
+set "NGROK_EXE="
+if exist "%~dp0ngrok.exe" set "NGROK_EXE=%~dp0ngrok.exe"
+if not defined NGROK_EXE for /f "delims=" %%N in ('where ngrok 2^>nul') do if not defined NGROK_EXE set "NGROK_EXE=%%N"
+if not defined NGROK_EXE (
+    echo [AVISO] ngrok nao encontrado: sem ele as mensagens dos pais nao chegam ao bot.
+    echo         Coloque o ngrok.exe na pasta do CostaPresenca.
+    exit /b 0
+)
+tasklist /fi "imagename eq ngrok.exe" 2>nul | find /i "ngrok.exe" >nul
+if errorlevel 1 (
+    echo [BOT] Ligando o tunel ngrok ^(janela minimizada "CostaPresenca - Tunel ngrok"^)...
+    start "CostaPresenca - Tunel ngrok" /min "%NGROK_EXE%" http 3001
+) else (
+    echo [BOT] O tunel ngrok ja esta ligado.
+)
+exit /b 0
+
 :LOGIN
 echo [LOGIN] Abrindo o navegador para login institucional e MFA no Power BI...
 call npm run login -- --config config/local.json
@@ -156,6 +207,16 @@ exit /b %errorlevel%
 echo [DIAGNOSTICO] Conferindo integracao com a WhatsApp Cloud API...
 call npm run whatsapp:diagnostico
 exit /b %errorlevel%
+
+:BOT
+echo [BOT] Iniciando o bot de cadastro dos pais pelo WhatsApp ^(porta 3001^).
+echo [BOT] O tunel ^(cloudflared/ngrok^) precisa estar apontando para http://localhost:3001
+echo [BOT] Deixe esta janela aberta. Para parar: Ctrl+C.
+echo.
+call npm run bot
+set "RC_BOT=%errorlevel%"
+pause
+exit /b %RC_BOT%
 
 :AGENDAR
 echo ============================================================
@@ -215,11 +276,12 @@ echo   Executa tudo de uma vez: prepara o ambiente, coleta dados do Power BI
 echo   ^(se configurado^), consolida Busca Ativa, gera previa e abre o Painel Web.
 echo.
 echo Opcoes disponiveis:
-echo   --painel              Abre direto o Painel Web ^(http://localhost:3000^)
+echo   --painel              Abre direto o Painel Web ^(http://localhost:3000^) e liga o bot
 echo   --coleta              Roda somente coleta + consolidacao + previa ^(sem abrir painel^)
 echo   --agendar [HH:MM]     Agenda a coleta diaria no Windows ^(padrao: 17:30^)
 echo   --login               Abre o Edge para login institucional/MFA no Power BI
 echo   --diagnostico         Confere credenciais, numero e template da WhatsApp Cloud API
+echo   --bot                 Liga o bot que cadastra os pais pelo WhatsApp ^(porta 3001^)
 echo   --ajuda               Mostra esta ajuda
 echo.
 exit /b 0

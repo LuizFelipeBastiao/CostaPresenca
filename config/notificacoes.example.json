@@ -5,6 +5,14 @@
   },
   "canal": "dry-run",
   "contatosCsv": "data/cadastros/contatos_responsaveis.csv",
+  "fonteContatos": "ambos",
+  "cadastro": {
+    "numeroWhatsappEscola": "(45) 99999-0000",
+    "aprovacaoManual": false,
+    "maxResponsaveisPorAluno": 3,
+    "maxTentativasErradasPorDia": 5,
+    "porta": 3001
+  },
   "exigirConsentimento": true,
   "janelaReenvioDias": 6,
   "maxIdadeDadosHoras": 48,

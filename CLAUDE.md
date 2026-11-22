@@ -16,9 +16,11 @@ node --import tsx --test --test-name-pattern "dataLocal" tests/coleta.test.ts   
 npm start                                       # painel web em http://localhost:3000 (PORT muda a porta)
 npm run consolidate                             # lê os CSVs coletados e gera data/resumo_*.{json,csv}
 npm run notificar                               # prévia dos avisos (não envia nada)
+npm run cadastro -- bilhetes                     # códigos + bilhetes com QR (data/cadastros/bilhetes.html)
+npm run bot -- --simular                        # receptor do webhook sem enviar respostas
 ```
 
-Comandos que abrem o Edge e precisam do login institucional (`npm run login -- --config config/local.json`, com MFA feito pela pessoa): `collect:all` (exige `--execute`), `collect:presente-alunos`, `collect:pre-conselho`, `network:probe`, `inspect`. Não rode esses comandos, nem `notificar -- --execute`, sem a pessoa pedir: eles agem em sistemas reais. `CostaPresenca.bat` é o ponto de entrada do usuário final e encadeia coleta → consolidação → prévia → painel (`--painel`, `--coleta`, `--login`, `--agendar`, `--diagnostico`).
+Comandos que abrem o Edge e precisam do login institucional (`npm run login -- --config config/local.json`, com MFA feito pela pessoa): `collect:all` (exige `--execute`), `collect:presente-alunos`, `collect:pre-conselho`, `network:probe`, `inspect`. Não rode esses comandos, nem `notificar -- --execute` ou `npm run bot` sem `--simular`, sem a pessoa pedir: eles agem em sistemas reais. `CostaPresenca.bat` é o ponto de entrada do usuário final e encadeia coleta → consolidação → prévia → painel (`--painel`, `--coleta`, `--login`, `--agendar`, `--diagnostico`, `--bot`); ao abrir o painel ele também liga bot e ngrok minimizados (`:LIGAR_BOT`). A secretaria não usa terminal: `Entrar no Power BI.bat` e `Agendar atualizacao diaria.bat` são atalhos de duplo clique.
 
 ## Arquitetura
 
@@ -28,9 +30,9 @@ A esteira é feita de scripts independentes que conversam **só por arquivos em 
 2. **Gravação** (`src/storage.ts` e os próprios extratores): cada coleta grava um arquivo com timestamp, uma cópia em `data/historico/AAAA-MM-DD/` (data **local**, via `src/datas.ts`) e um ponteiro `<nome>-latest.csv`, que é o que os consumidores leem. `data/audit.jsonl` registra cada execução com hash SHA-256.
 3. **Consolidação** (`src/consolidate.ts`): junta os `-latest` em `resumo_escola_total`, Pré-Conselho e Busca Ativa. Também espelha os resultados numa pasta irmã `DATA_HUB/data` fora do repositório, se ela existir. O servidor importa `consolidateMetrics`; a execução automática no fim do arquivo é protegida para rodar só quando o script é chamado direto. Mantenha esse padrão em qualquer script que também seja importado.
 4. **Notificações** (`src/notificacoes/`): `presenca.ts` lê o CSV nominal (chave = **CGM**); `fontes.ts` junta os contatos (planilha CSV e/ou `CadastroStore` do bot); `regras.ts` decide quem avisar (queda semanal, amparo legal, matrícula, mensagem crítica < 75%); `planejar.ts` é a função pura que monta o plano; `senders/` implementa os canais `dry-run` (padrão), `whatsapp-cloud`, `webhook` e `smtp`; `historico.ts` evita reenvio e guarda só o hash do destino. A configuração fica em `config/notificacoes.json` + `.env` (`notificacoes/config.ts`).
-5. **Painel** (`src/server.ts`): `node:http` puro, sem framework. As rotas `/api/*` e todo o HTML/JS do painel estão inline nesse arquivo. Ele repete o fluxo de prévia e disparo de `src/notificar.ts`: uma mudança de regra ou de envio normalmente precisa ser feita nos dois.
+5. **Painel** (`src/server.ts`): `node:http` puro, sem framework. As rotas `/api/*` e todo o HTML/JS do painel estão inline nesse arquivo. A aba Bilhetes usa `gerarBilhetes`/`resumoCadastros` de `cadastro/cli.ts` (rotas `/api/cadastro/resumo` e `/bilhetes`). Ele repete o fluxo de prévia e disparo de `src/notificar.ts`: uma mudança de regra ou de envio normalmente precisa ser feita nos dois.
 
-`src/cadastro/bot.ts` (`processarMensagem`) tem a lógica do bot de cadastro por WhatsApp ("CADASTRAR <código>"), mas nenhum receptor HTTP chama essa função ainda.
+6. **Bot de cadastro** (`src/bot-whatsapp.ts` + `src/cadastro/`): processo separado do painel, na porta `cadastro.porta` (3001), que escuta só em 127.0.0.1 e expõe apenas `/webhook` e `/saude`; é essa porta que vai para o túnel (ngrok/cloudflared). `webhook.ts` tem as partes puras (assinatura `X-Hub-Signature-256` com o App Secret, handshake do GET, extração das mensagens, deduplicação por id). `bot.ts` (`processarMensagem`) decide a resposta e grava em `CadastroStore` (`data/cadastros/cadastros.json`, com o telefone = `wa_id`). As respostas saem por `enviarTextoWhatsApp`. `cadastro/cli.ts` (`npm run cadastro`) gera os códigos e o `bilhetes.html` com QR (pacote `qrcode`, importado sob demanda) e aprova os pendentes. Os avisos só incluem esses pais quando `fonteContatos` é `cadastros` ou `ambos`.
 
 ## Convenções e armadilhas
 
