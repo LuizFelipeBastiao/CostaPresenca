@@ -14,7 +14,7 @@ export interface AlunoDisciplinaNota {
   tri2: number | null;
   tri3: number | null;
   total: number | null;
-  status: "EM RISCO (< 6.0)" | "ATENÇÃO (6.0 - 6.9)" | "ADEQUADO / BOM";
+  status: "EM RISCO (< 6.0)" | "ATENÇÃO (6.0 - 6.9)" | "ADEQUADO / BOM" | "SEM NOTAS LANÇADAS";
 }
 
 export interface MatrixDsrResult {
@@ -114,16 +114,12 @@ export function decodeMatrixDsrPayload(json: any): MatrixDsrResult {
     }
 
     for (const [disc, notas] of Object.entries(disciplinasMap)) {
-      const notasValidas = [notas.tri1, notas.tri2].filter((n): n is number => n !== null);
-      const menor = notasValidas.length > 0 ? Math.min(...notasValidas) : 10;
-      const status = menor < 6.0 ? "EM RISCO (< 6.0)" : menor < 7.0 ? "ATENÇÃO (6.0 - 6.9)" : "ADEQUADO / BOM";
-
       relacionalRows.push({
         aluno: nome,
         cgm,
         disciplina: disc,
         ...notas,
-        status
+        status: statusPreConselho(notas)
       });
     }
   }
@@ -133,4 +129,17 @@ export function decodeMatrixDsrPayload(json: any): MatrixDsrResult {
     columns,
     relacionalRows
   };
+}
+
+/**
+ * Classifica pela menor nota de trimestre já lançada (1º, 2º e 3º).
+ * Sem nenhuma nota de trimestre o aluno não é dado como "bom": fica "SEM NOTAS LANÇADAS".
+ */
+export function statusPreConselho(
+  notas: { tri1: number | null; tri2: number | null; tri3: number | null }
+): AlunoDisciplinaNota["status"] {
+  const notasValidas = [notas.tri1, notas.tri2, notas.tri3].filter((n): n is number => n !== null);
+  if (notasValidas.length === 0) return "SEM NOTAS LANÇADAS";
+  const menor = Math.min(...notasValidas);
+  return menor < 6.0 ? "EM RISCO (< 6.0)" : menor < 7.0 ? "ATENÇÃO (6.0 - 6.9)" : "ADEQUADO / BOM";
 }

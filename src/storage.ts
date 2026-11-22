@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { dataLocal } from "./datas.js";
 import type { AuditEvent, ExtractedTable } from "./types.js";
 
 function csvCell(value: string): string {
@@ -22,7 +23,7 @@ export async function saveTable(
   await mkdir(directory, { recursive: true });
 
   const collectedDate = table.source.collectedAt ? new Date(table.source.collectedAt) : new Date();
-  const dateFolder = collectedDate.toISOString().slice(0, 10); // YYYY-MM-DD
+  const dateFolder = dataLocal(collectedDate); // AAAA-MM-DD no fuso local
   const stamp = table.source.collectedAt.replace(/[:.]/g, "-");
   const base = path.join(directory, `${stamp}-${randomUUID().slice(0, 8)}`);
   const hash = contentHash(table);

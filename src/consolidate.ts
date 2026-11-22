@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { dataLocal } from "./datas.js";
+import { pathToFileURL } from "node:url";
 
 function parseCsv(content: string): { headers: string[]; rows: string[][] } {
   const lines = content.trim().split(/\r?\n/).filter((line) => line.length > 0);
@@ -71,6 +73,8 @@ function rowToObject(headers: string[], row: string[]): Record<string, string> {
 }
 
 export function consolidateMetrics(dataDir: string = "data") {
+  // A pasta data/ fica no .gitignore, entao pode nao existir num clone novo.
+  fs.mkdirSync(dataDir, { recursive: true });
   const reportKeys = [
     "presente-estadual",
     "aprendizagem-parana",
@@ -201,6 +205,8 @@ export function consolidateMetrics(dataDir: string = "data") {
       const cgm = obj["CGM"] || "";
       const disc = obj["Disciplina"] || "";
       const status = obj["Status Pré-Conselho"] || "";
+      // Disciplina sem nota de trimestre não entra na conta de risco (nem como boa, nem como ruim).
+      if (status.includes("SEM NOTAS")) continue;
 
       if (!alunoRiscoMap[cgm]) {
         alunoRiscoMap[cgm] = { aluno, cgm, disciplinasRisco: [], disciplinasAtencao: [] };
@@ -363,7 +369,7 @@ export function consolidateMetrics(dataDir: string = "data") {
   fs.writeFileSync(outCsv, csvText);
 
   // 1. Gravação na partição histórica diária: data/historico/YYYY-MM-DD/
-  const dateFolder = new Date().toISOString().slice(0, 10);
+  const dateFolder = dataLocal();
   const dailyHistoryDir = path.resolve(dataDir, "historico", dateFolder);
   if (!fs.existsSync(dailyHistoryDir)) fs.mkdirSync(dailyHistoryDir, { recursive: true });
 
@@ -475,7 +481,7 @@ function syncToDataHub(sourceDataDir: string, manifest?: any): void {
   }
 
   // Sincroniza partição histórica diária
-  const dateFolder = new Date().toISOString().slice(0, 10);
+  const dateFolder = dataLocal();
   const srcDaily = path.join(sourceDataDir, "historico", dateFolder);
   const destDaily = path.join(dataHubDir, "historico", dateFolder);
   if (fs.existsSync(srcDaily)) {
@@ -494,4 +500,7 @@ function syncToDataHub(sourceDataDir: string, manifest?: any): void {
   console.log(`[DATA_HUB SINCRONIZADO COM SUCESSO] Partição histórica e ponteiros atualizados.`);
 }
 
-consolidateMetrics();
+// So roda sozinho quando chamado direto (npm run consolidate), nao ao ser importado pelo server.
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  consolidateMetrics();
+}

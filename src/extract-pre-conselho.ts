@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { dataLocal } from "./datas.js";
 import { randomUUID } from "node:crypto";
 import { loadConfig, getReport } from "./config.js";
 import { launchAuthorizedContext } from "./browser.js";
@@ -7,6 +8,7 @@ import { assertAllowedUrl, assertExpectedPage, saveErrorDiagnostic } from "./saf
 import { appendAudit } from "./storage.js";
 import { decodeMatrixDsrPayload } from "./powerbi/matrix-decoder.js";
 import { clickBookmarkButton, unlockBookmarkAndScope, tryDismissMicrosoftPopups } from "./powerbi/filters.js";
+import { aguardarCapturas } from "./powerbi/network-interceptor.js";
 
 export async function extractPreConselho(): Promise<{
   totalAlunos: number;
@@ -49,7 +51,7 @@ export async function extractPreConselho(): Promise<{
   page.on("response", onResponse);
 
   try {
-    console.log(`[1/5] Navegando para Aprendizagem Paraná...`);
+    console.log(`[1/4] Navegando para Aprendizagem Paraná...`);
     await page.goto(report.url, { waitUntil: "domcontentloaded", timeout: 90_000 });
     await tryDismissMicrosoftPopups(page);
     await page.waitForTimeout(config.settleMs);
@@ -57,27 +59,30 @@ export async function extractPreConselho(): Promise<{
 
     capturedMatrixJson.length = 0;
     console.log(`[2/4] Acessando aba MAPA dinamicamente...`);
-    const clicked = await clickBookmarkButton(page, "MAPA");
-    console.log(`[INFO] Botão MAPA acionado: ${clicked}`);
+    if (!(await clickBookmarkButton(page, "MAPA"))) {
+      throw new Error('Botão "MAPA" não encontrado no relatório Aprendizagem Paraná.');
+    }
     await page.waitForTimeout(4_000);
 
     console.log(`[3/4] Aplicando escopo institucional dinâmico (${config.context.nre} / ${config.context.escolaNome})...`);
+    const capturasAntesDoEscopo = capturedMatrixJson.length;
     await unlockBookmarkAndScope(page, config.context);
 
     console.log(`[4/4] Aguardando cálculo da matriz de estudantes e notas...`);
-    for (let w = 0; w < 15; w++) {
-      if (capturedMatrixJson.length > 0) break;
-      await page.waitForTimeout(1_000);
-    }
+    await aguardarCapturas(page, capturedMatrixJson, { timeoutMs: 30_000, silencioMs: 4_000 });
 
     if (capturedMatrixJson.length === 0) {
       throw new Error("Nenhum payload de matriz DSR foi capturado na rede.");
     }
 
-    // Pega o maior payload DSR matricial capturado
-    let bestMatrix = capturedMatrixJson[0];
+    // Se o escopo disparou consultas novas, só elas valem: as anteriores podem ser de outra escola
+    // (a do bookmark padrão). Entre as válidas, pega a matriz com mais alunos.
+    const candidatas = capturedMatrixJson.length > capturasAntesDoEscopo
+      ? capturedMatrixJson.slice(capturasAntesDoEscopo)
+      : capturedMatrixJson;
+    let bestMatrix = candidatas[0];
     let maxAlunos = 0;
-    for (const item of capturedMatrixJson) {
+    for (const item of candidatas) {
       try {
         const alCount = item.results[0].result.data.dsr.DS[0].PH[0]?.DM0?.length || 0;
         if (alCount > maxAlunos) {
@@ -124,7 +129,7 @@ export async function extractPreConselho(): Promise<{
     fs.writeFileSync(latestCsvPath, csvContent, "utf8");
 
     // Partição histórica diária
-    const dateFolder = new Date().toISOString().slice(0, 10);
+    const dateFolder = dataLocal();
     const dailyHistoryDir = path.resolve(config.outputDirectory, "historico", dateFolder);
     if (!fs.existsSync(dailyHistoryDir)) fs.mkdirSync(dailyHistoryDir, { recursive: true });
     fs.writeFileSync(path.join(dailyHistoryDir, "matriz-pre-conselho.csv"), csvContent, "utf8");
