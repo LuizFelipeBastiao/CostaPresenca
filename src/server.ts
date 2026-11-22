@@ -13,6 +13,7 @@ import { criarSender } from "./notificacoes/senders/index.js";
 import { emailValido, mascararEmail, mascararTelefone, normalizarTelefone } from "./notificacoes/contatos.js";
 import { identificarCasosOrgaosCompetentes, gerarHtmlNotificacaoConselhoTutelar } from "./notificacoes/orgaos.js";
 import { consolidateMetrics } from "./consolidate.js";
+import { gerarBilhetes, resumoCadastros } from "./cadastro/cli.js";
 
 const PORTA = Number(process.env.PORT || 3000);
 
@@ -346,6 +347,25 @@ const server = http.createServer(async (req, res) => {
       return responderJson(res, 200, { execucoes, envios });
     }
 
+    // 8b. Bilhetes de cadastro pelo WhatsApp (código + QR por aluno)
+    if (pathname === "/api/cadastro/resumo" && method === "GET") {
+      return responderJson(res, 200, resumoCadastros(config));
+    }
+
+    if (pathname === "/bilhetes" && method === "GET") {
+      try {
+        const r = await gerarBilhetes(config, {
+          turma: url.searchParams.get("turma") || undefined,
+          semCadastro: url.searchParams.get("semCadastro") === "1",
+          botaoImprimir: true
+        });
+        return responderHtml(res, 200, r.html);
+      } catch (err: any) {
+        const msg = String(err?.message || err).replace(/[&<>]/g, (c: string) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
+        return responderHtml(res, 200, `<!doctype html><meta charset="utf-8"><body style="font-family:Arial;padding:40px;max-width:640px"><h2>Não foi possível gerar os bilhetes</h2><p>${msg}</p></body>`);
+      }
+    }
+
     // 9. Página Principal da Interface Gráfica (Dashboard SPA)
     if (pathname === "/" || pathname === "/index.html") {
       return responderHtml(res, 200, gerarHtmlDashboard());
@@ -455,6 +475,7 @@ function gerarHtmlDashboard(): string {
     <button class="nav-btn" onclick="trocarAba('aba-notificacoes')">💬 Notificações aos Pais</button>
     <button class="nav-btn" onclick="trocarAba('aba-busca-ativa')">🚨 Busca Ativa / Conselho</button>
     <button class="nav-btn" onclick="trocarAba('aba-contatos')">👥 Cadastro de Telefones</button>
+    <button class="nav-btn" onclick="trocarAba('aba-bilhetes')">🎟️ Bilhetes do WhatsApp</button>
     <button class="nav-btn" onclick="trocarAba('aba-historico')">📜 Histórico de Disparos</button>
   </nav>
 
@@ -594,6 +615,44 @@ function gerarHtmlDashboard(): string {
       </div>
     </section>
 
+    <!-- ABA: BILHETES DE CADASTRO PELO WHATSAPP -->
+    <section id="aba-bilhetes" class="tab-content">
+      <div class="action-bar">
+        <div>
+          <h2 style="font-size: 16px;">Bilhetes de cadastro pelo WhatsApp</h2>
+          <p style="font-size: 13px; color: var(--text-muted);">Cada aluno tem um código. O responsável aponta a câmera para o QR do bilhete, envia a mensagem e passa a receber os avisos de falta.</p>
+        </div>
+      </div>
+      <div id="bilhetesAviso" style="display:none; margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 14px;"></div>
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-title">Alunos com responsável</div>
+          <div class="metric-val" id="bilCobertos" style="color: #15803d;">-</div>
+          <div class="metric-sub" id="bilPercentual">recebendo avisos pelo WhatsApp</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Responsáveis cadastrados</div>
+          <div class="metric-val" id="bilResponsaveis">-</div>
+          <div class="metric-sub">pais e mães que enviaram o código</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">WhatsApp no bilhete</div>
+          <div class="metric-val" id="bilNumero" style="font-size: 22px;">-</div>
+          <div class="metric-sub">número impresso e dentro do QR</div>
+        </div>
+      </div>
+      <div class="action-bar">
+        <div style="display:flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+          <select id="bilTurma" style="padding: 8px; min-width: 240px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;"><option value="">Todas as turmas</option></select>
+          <label style="font-size: 14px; display:flex; gap: 8px; align-items: center;">
+            <input type="checkbox" id="bilSemCadastro"> Só alunos que ainda não têm responsável
+          </label>
+        </div>
+        <button class="btn btn-primary" onclick="abrirBilhetes()">🖨️ Abrir bilhetes para imprimir</button>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted);">Gerar de novo não muda os códigos: um bilhete já entregue continua valendo. Para reimprimir o bilhete de uma turma, escolha a turma e abra de novo.</p>
+    </section>
+
     <!-- ABA 5: HISTÓRICO -->
     <section id="aba-historico" class="tab-content">
       <div class="action-bar">
@@ -685,6 +744,37 @@ function gerarHtmlDashboard(): string {
       event.target.classList.add("active");
       if (abaId === "aba-busca-ativa") carregarBuscaAtiva();
       if (abaId === "aba-historico") carregarHistorico();
+      if (abaId === "aba-bilhetes") carregarBilhetes();
+    }
+
+    async function carregarBilhetes() {
+      try {
+        const r = await (await fetch("/api/cadastro/resumo")).json();
+        const aviso = document.getElementById("bilhetesAviso");
+        const avisos = [];
+        if (r.semListaDeAlunos) avisos.push("Ainda não há lista de alunos: ela vem da coleta do Power BI. Feche o painel e dê dois cliques no CostaPresenca.bat para atualizar.");
+        if (!r.numeroWhatsappEscola) avisos.push("O número do WhatsApp da escola não está configurado: os bilhetes sairão sem QR code.");
+        aviso.innerText = avisos.join(" ");
+        aviso.style.display = avisos.length ? "block" : "none";
+        document.getElementById("bilCobertos").innerText = r.semListaDeAlunos ? r.alunosCobertos : r.alunosCobertos + " de " + r.alunos;
+        document.getElementById("bilPercentual").innerText = r.alunos ? Math.round(100 * r.alunosCobertos / r.alunos) + "% dos alunos recebem avisos" : "recebendo avisos pelo WhatsApp";
+        document.getElementById("bilResponsaveis").innerText = r.responsaveisAtivos;
+        document.getElementById("bilNumero").innerText = r.numeroWhatsappEscola || "não configurado";
+        const sel = document.getElementById("bilTurma");
+        const atual = sel.value;
+        sel.innerHTML = '<option value="">Todas as turmas</option>' + r.turmas.map(t => '<option>' + t.replace(/</g, "&lt;") + '</option>').join("");
+        sel.value = atual;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function abrirBilhetes() {
+      const q = new URLSearchParams();
+      const turma = document.getElementById("bilTurma").value;
+      if (turma) q.set("turma", turma);
+      if (document.getElementById("bilSemCadastro").checked) q.set("semCadastro", "1");
+      window.open("/bilhetes" + (q.toString() ? "?" + q : ""), "_blank");
     }
 
     async function carregarStatus() {

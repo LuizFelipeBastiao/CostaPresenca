@@ -93,7 +93,8 @@ const cadastroSchema = z.object({
   maxResponsaveisPorAluno: z.number().int().positive().max(10).default(3),
   /** Tentativas com código errado por telefone em 24h antes de bloquear. */
   maxTentativasErradasPorDia: z.number().int().positive().max(50).default(5),
-  porta: z.number().int().positive().max(65_535).default(3000),
+  /** Porta do receptor do webhook (npm run bot). Diferente da do painel (3000): só esta vai para o túnel. */
+  porta: z.number().int().positive().max(65_535).default(3001),
   verifyTokenEnv: z.string().min(1).default("WHATSAPP_VERIFY_TOKEN"),
   appSecretEnv: z.string().min(1).default("WHATSAPP_APP_SECRET")
 });

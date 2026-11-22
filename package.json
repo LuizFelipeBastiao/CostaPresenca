@@ -20,6 +20,8 @@
     "network:probe": "tsx src/cli.ts network-probe",
     "notificar": "tsx src/notificar.ts",
     "notificar:contatos": "tsx src/notificar.ts modelo-contatos",
+    "bot": "tsx src/bot-whatsapp.ts",
+    "cadastro": "tsx src/cadastro/cli.ts",
     "whatsapp:diagnostico": "tsx src/whatsapp-diagnostico.ts"
   },
   "engines": {
@@ -28,11 +30,13 @@
   "dependencies": {
     "nodemailer": "^10.2.0",
     "playwright": "^1.55.0",
+    "qrcode": "^1.5.4",
     "zod": "^4.1.5"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",
     "@types/nodemailer": "^8.0.2",
+    "@types/qrcode": "^1.5.6",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }
