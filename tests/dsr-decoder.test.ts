@@ -92,8 +92,8 @@ test("decodifica payload DSR real capturado do Power BI se disponível em data/"
   const targetFile = path.join(presenteDir, files[0]!);
   const raw = fs.readFileSync(targetFile, "utf8");
   const parsed = JSON.parse(raw);
-
-  const result = decodeDsrPayload(parsed);
+  // Listas grandes são salvas como um array com uma resposta por janela do Power BI.
+  const result = decodeDsrPayload(Array.isArray(parsed) ? parsed[0] : parsed);
 
   assert.ok(result.headers.length > 5);
   assert.ok(result.rows.length > 0);
