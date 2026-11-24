@@ -58,19 +58,23 @@ export type SchoolContext = z.infer<typeof contextSchema>;
 
 export async function loadConfig(configPath?: string): Promise<AppConfig> {
   const filename = path.resolve(configPath ?? "config/local.json");
-  let rawContent = await readFile(filename, "utf8");
+  return interpretarConfig(await readFile(filename, "utf8"));
+}
 
+/** Interpola ${ANO}/${NRE}/${ESCOLA} e valida o texto de um config/local.json. */
+export function interpretarConfig(rawContent: string): AppConfig {
   // Interpolação dinâmica de variáveis de ambiente e padrões
   const ano = process.env.ANO_LETIVO ?? "2026";
   const nre = process.env.NRE ?? "FOZ DO IGUACU";
   const escola = process.env.ESCOLA_NOME ?? "ARTHUR DA COSTA E SILVA";
 
-  rawContent = rawContent
+  const texto = rawContent
+    .replace(/^\uFEFF/, "")
     .replace(/\$\{ANO\}/g, ano)
     .replace(/\$\{NRE\}/g, nre)
     .replace(/\$\{ESCOLA\}/g, escola);
 
-  const parsed: unknown = JSON.parse(rawContent);
+  const parsed: unknown = JSON.parse(texto);
   return configSchema.parse(parsed);
 }
 

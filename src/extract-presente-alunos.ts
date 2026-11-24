@@ -55,7 +55,12 @@ async function esperarSilencio(
 function assertHostDeConsulta(url: string): void {
   const u = new URL(url);
   const host = u.hostname.toLowerCase();
-  const permitido = host.endsWith(".analysis.windows.net") || host === "app.powerbi.com" || host.endsWith(".powerbi.com");
+  // *.pbidedicated.windows.net: capacidade Premium/Fabric da SEED, que atende a consulta em alguns computadores.
+  const permitido =
+    host.endsWith(".analysis.windows.net") ||
+    host.endsWith(".pbidedicated.windows.net") ||
+    host === "app.powerbi.com" ||
+    host.endsWith(".powerbi.com");
   if (u.protocol !== "https:" || !permitido) {
     throw new Error(`Consulta do Power BI para um endereço inesperado (${host}); a paginação foi interrompida.`);
   }

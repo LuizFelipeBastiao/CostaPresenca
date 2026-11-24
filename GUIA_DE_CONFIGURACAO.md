@@ -64,17 +64,21 @@ Este guia leva um computador do zero até o sistema completo funcionando:
 
 A coleta abre o Edge sozinha, entra no relatório **2026 Presente Estadual**, muda para a visão **TURMA**, filtra pela escola e salva a lista nominal de alunos com CGM e presença.
 
+Os campos desta seção e da seção 3 também podem ser preenchidos pelo painel, na aba **⚙️ Configurações**: o painel confere cada campo antes de salvar e guarda uma cópia do arquivo anterior (`.bak`). Para abrir o painel antes de configurar a coleta, dê dois cliques no `CostaPresenca.bat`: ele pula a coleta e abre o painel no final. A aba só funciona no próprio computador do CostaPresença, não por outro computador da rede.
+
 ### 2.1 Endereço do relatório
 
 1. No navegador, entre no Power BI com a conta da escola e abra o relatório **2026 Presente Estadual**.
 2. Copie o endereço inteiro da barra do navegador. Ele começa com `https://app.powerbi.com/groups/...`.
-3. Abra `config\local.json` no Bloco de Notas e troque `https://app.powerbi.com/COLE-AQUI-A-URL-AUTORIZADA` pelo endereço copiado.
+3. Cole o endereço em **Configurações → Endereço do relatório Presente Estadual** e salve. (Sem o painel: abra `config\local.json` no Bloco de Notas e troque `https://app.powerbi.com/COLE-AQUI-A-URL-AUTORIZADA` pelo endereço copiado.)
+
+Deixe desligada a opção **coleta genérica do Presente Estadual** (`"enabled": false`). A lista de alunos vem de outra etapa; ligada, ela só deixa a atualização uns 2 minutos mais lenta e termina em erro.
 
 ### 2.2 Nome da escola no filtro
 
 O coletor precisa achar a escola no filtro **ESCOLA** do relatório. O Power BI usa o nome **abreviado**. Por exemplo: `ARTHUR DA C SILVA, C E C-M MAL-EF M P - 41077512`.
 
-Ainda em `config\local.json`, logo abaixo de `"settleMs": 1500,`, coloque um trecho desse nome:
+Em **Configurações → Nome da escola no filtro ESCOLA**, coloque um trecho desse nome. Sem o painel: em `config\local.json`, logo abaixo de `"settleMs": 1500,`, coloque:
 
 ```json
   "context": {
@@ -82,7 +86,7 @@ Ainda em `config\local.json`, logo abaixo de `"settleMs": 1500,`, coloque um tre
   },
 ```
 
-Se a escola não for de Foz do Iguaçu, acrescente também `"nre": "NOME DO NRE"` dentro de `context`.
+Se a escola não for de Foz do Iguaçu, ajuste também o **NRE** (no arquivo, `"nre": "NOME DO NRE"` dentro de `context`).
 
 > Esse filtro é uma trava de segurança. Se o coletor não conseguir deixar o filtro só com a sua escola, ele **para sem salvar nada**. É melhor uma coleta falhar do que salvar dados de outra escola como se fossem desta.
 
@@ -113,7 +117,7 @@ Para a tarefa rodar, o computador precisa estar **ligado e com o Windows logado*
 
 ## 3. Dados da escola e regras dos avisos
 
-Abra `config\notificacoes.json` e ajuste:
+No painel, em **Configurações**, preencha os cartões **Escola** e **Avisos de falta** e salve. Sem o painel, abra `config\notificacoes.json` e ajuste:
 
 ```json
 {
@@ -301,7 +305,7 @@ Mensagens recebidas durante a pausa não são respondidas depois.
 
 1. Adicione e verifique o número novo na Meta (4.1 e 4.2) e defina o nome de exibição (4.3).
 2. No `.env`, troque **`WHATSAPP_PHONE_NUMBER_ID`** pelo ID do número novo. Se não trocar, o bot ignora as mensagens enviadas ao número novo.
-3. No `config\notificacoes.json`, troque **`cadastro.numeroWhatsappEscola`**.
+3. No painel, em **Configurações → WhatsApp da escola**, coloque o número novo (no arquivo, é o **`cadastro.numeroWhatsappEscola`** do `config\notificacoes.json`).
 4. Atualize o número na política de privacidade.
 5. Feche as janelas do bot e dê dois cliques no `CostaPresenca.bat`.
 6. Reimprima os bilhetes. **Os códigos continuam os mesmos**; só o número e o QR mudam.
@@ -314,6 +318,7 @@ O webhook não precisa ser refeito: ele é do app, não do número.
 
 | Sintoma | Causa e solução |
 |:---|:---|
+| `Ancora do visual nao apareceu apos o carregamento: Turma` (etapa 1/5) | A coleta genérica está ligada. Desligue-a em **Configurações** (2.1); a lista de alunos vem da etapa 3/5. |
 | `Relatorio esperado nao encontrado ... 2026 Presente Estadual` | O endereço em `config\local.json` está errado ou é o do modelo. Refaça a 2.1. |
 | `Sessao do Power BI expirou` | Dois cliques em `Entrar no Power BI.bat` (2.3). |
 | `Nao consegui deixar o filtro ESCOLA so com "..."` | O `escolaNome` em `config\local.json` não bate com o nome abreviado do filtro ESCOLA no Power BI. Veja como a escola aparece no filtro e ajuste (2.2). |

@@ -19,3 +19,7 @@ REFERENCIA/
 # Notificações: segredos e configuração local
 .env
 config/notificacoes.json
+
+# Cópias de segurança gravadas pela aba Configurações do painel
+config/*.bak
+config/*.tmp

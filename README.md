@@ -23,6 +23,7 @@ Com um **duplo clique** em `CostaPresenca.bat`, ele executa tudo em sequência a
    - **🚀 Disparo em 1 Clique:** Envio seguro para os responsáveis (com opção de teste prévio no seu próprio celular).
    - **👥 Cadastro de Telefones:** Formulário rápido para adicionar o telefone de pais pendentes sem editar planilhas.
    - **🎟️ Bilhetes do WhatsApp:** Quantos alunos já têm responsável cadastrado pelo bot e o botão que abre os bilhetes (código + QR) para imprimir, por turma ou só de quem ainda falta.
+   - **⚙️ Configurações:** Endereços dos relatórios do Power BI, nome da escola no filtro, dados da escola nas mensagens, canal e regras dos avisos, com validação antes de salvar. Mostra também se o login do Power BI, o `.env` e o ngrok estão prontos (sem exibir segredos). Só funciona no próprio computador do CostaPresença.
    - **📋 Ficha do Conselho Tutelar:** Emissão e impressão da ficha oficial FICAI para alunos infrequentes com base na LDB e ECA.
    - **📜 Histórico Auditável:** Registro de todos os envios e confirmações de entrega.
 
