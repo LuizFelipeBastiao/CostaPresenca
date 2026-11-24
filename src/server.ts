@@ -14,6 +14,7 @@ import { emailValido, mascararEmail, mascararTelefone, normalizarTelefone } from
 import { identificarCasosOrgaosCompetentes, gerarHtmlNotificacaoConselhoTutelar } from "./notificacoes/orgaos.js";
 import { consolidateMetrics } from "./consolidate.js";
 import { gerarBilhetes, resumoCadastros } from "./cadastro/cli.js";
+import { ErroConfiguracao, lerConfiguracoes, salvarConfiguracoes } from "./configuracoes.js";
 
 const PORTA = Number(process.env.PORT || 3000);
 
@@ -61,6 +62,56 @@ function lerBodyJson(req: http.IncomingMessage): Promise<any> {
   });
 }
 
+const NOMES_LOCAIS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/**
+ * As configurações só podem ser lidas e alteradas no próprio computador do
+ * CostaPresença: o painel escuta em todas as interfaces e não tem login.
+ * Exige conexão de loopback, Host local (contra DNS rebinding), Origin igual
+ * ao próprio painel e um cabeçalho próprio (que outro site não consegue
+ * mandar sem preflight, e o preflight não libera esse cabeçalho).
+ */
+function pedidoDoProprioComputador(req: http.IncomingMessage): string | null {
+  const remoto = req.socket.remoteAddress ?? "";
+  if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(remoto)) {
+    return "As configurações só podem ser vistas e alteradas no computador onde o CostaPresença está instalado.";
+  }
+  const host = String(req.headers.host ?? "");
+  let nomeHost = "";
+  try {
+    nomeHost = new URL(`http://${host}`).hostname;
+  } catch {}
+  if (!NOMES_LOCAIS.has(nomeHost)) return "Endereço não permitido. Abra o painel por http://localhost.";
+  const origem = req.headers.origin;
+  if (origem !== undefined && origem !== `http://${host}`) return "Pedido de outro site recusado.";
+  if (req.headers["x-costapresenca"] !== "painel") return "Pedido recusado.";
+  return null;
+}
+
+function lerCorpoLimitado(req: http.IncomingMessage, limite = 64 * 1024): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let tamanho = 0;
+    const partes: Buffer[] = [];
+    req.on("data", (parte: Buffer) => {
+      tamanho += parte.length;
+      if (tamanho > limite) {
+        reject(new ErroConfiguracao("Dados grandes demais."));
+        req.destroy();
+        return;
+      }
+      partes.push(parte);
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(partes).toString("utf8") || "{}"));
+      } catch {
+        reject(new ErroConfiguracao("Dados inválidos."));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const pathname = url.pathname;
@@ -79,6 +130,26 @@ const server = http.createServer(async (req, res) => {
 
   try {
     carregarEnv(".env", true);
+
+    // Configurações: tratadas antes de carregar o notificacoes.json, para que um
+    // arquivo com erro possa ser corrigido pelo próprio painel.
+    if (pathname === "/api/configuracoes" && (method === "GET" || method === "POST")) {
+      const recusa = pedidoDoProprioComputador(req);
+      if (recusa) return responderJson(res, 403, { erro: recusa });
+      try {
+        if (method === "GET") return responderJson(res, 200, lerConfiguracoes(process.cwd()));
+        if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) {
+          return responderJson(res, 415, { erro: "Formato não suportado." });
+        }
+        const r = salvarConfiguracoes(process.cwd(), await lerCorpoLimitado(req));
+        console.log(`[CONFIGURACOES] Salvas pelo painel: ${r.alterados.join(", ") || "nenhuma mudança"}.`);
+        return responderJson(res, 200, { sucesso: true, ...r });
+      } catch (err) {
+        if (err instanceof ErroConfiguracao) return responderJson(res, 400, { erro: err.message });
+        throw err;
+      }
+    }
+
     const config = await carregarConfigNotificacoes();
 
     // 1. Status Geral do Sistema
@@ -456,6 +527,16 @@ function gerarHtmlDashboard(): string {
     .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #475569; }
     .form-group input, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
 
+    .config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 18px; margin-bottom: 20px; }
+    .config-card { background: var(--surface); padding: 20px; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
+    .config-card h3 { font-size: 15px; margin-bottom: 4px; }
+    .config-card > p { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+    .form-group small { display: block; color: var(--text-muted); font-size: 12px; margin-top: 3px; }
+    .form-check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; margin-bottom: 14px; }
+    .form-check input { margin-top: 4px; }
+    .situacao-lista { list-style: none; font-size: 14px; }
+    .situacao-lista li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+    .situacao-lista li:last-child { border-bottom: none; }
     .toast { position: fixed; bottom: 20px; right: 20px; background: #0f172a; color: #fff; padding: 12px 20px; border-radius: 8px; font-size: 14px; box-shadow: var(--shadow); display: none; z-index: 200; }
   </style>
 </head>
@@ -477,6 +558,7 @@ function gerarHtmlDashboard(): string {
     <button class="nav-btn" onclick="trocarAba('aba-contatos')">👥 Cadastro de Telefones</button>
     <button class="nav-btn" onclick="trocarAba('aba-bilhetes')">🎟️ Bilhetes do WhatsApp</button>
     <button class="nav-btn" onclick="trocarAba('aba-historico')">📜 Histórico de Disparos</button>
+    <button class="nav-btn" onclick="trocarAba('aba-config')">⚙️ Configurações</button>
   </nav>
 
   <main>
@@ -678,6 +760,106 @@ function gerarHtmlDashboard(): string {
         </table>
       </div>
     </section>
+
+    <!-- ABA: CONFIGURAÇÕES -->
+    <section id="aba-config" class="tab-content">
+      <div class="action-bar">
+        <div>
+          <h2 style="font-size: 16px;">Configurações</h2>
+          <p style="font-size: 13px; color: var(--text-muted);">Valem a partir da próxima atualização do CostaPresenca.bat. Só podem ser alteradas neste computador.</p>
+        </div>
+        <button class="btn btn-success" id="btnSalvarConfig" onclick="salvarConfig()">💾 Salvar configurações</button>
+      </div>
+      <div id="configErro" style="display:none; margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; background: #fee2e2; color: #991b1b; font-size: 14px;"></div>
+
+      <div class="config-grid">
+        <div class="config-card">
+          <h3>Coleta no Power BI</h3>
+          <p>Como a escola aparece nos filtros do Power BI da SEED e quais relatórios abrir.</p>
+          <div class="form-group">
+            <label for="cfgEscolaNome">Nome da escola no filtro ESCOLA</label>
+            <input id="cfgEscolaNome" type="text">
+            <small>Exatamente como aparece no Power BI, que costuma abreviar (ex.: ARTHUR DA C SILVA). Se não bater, a coleta para por segurança.</small>
+          </div>
+          <div class="form-group"><label for="cfgNre">NRE</label><input id="cfgNre" type="text"></div>
+          <div class="form-group"><label for="cfgMunicipio">Município</label><input id="cfgMunicipio" type="text"></div>
+          <div class="form-group"><label for="cfgAno">Ano letivo</label><input id="cfgAno" type="number" min="2020" max="2040"></div>
+          <div class="form-group">
+            <label for="cfgPresenteUrl">Endereço do relatório Presente Estadual</label>
+            <input id="cfgPresenteUrl" type="url" placeholder="https://app.powerbi.com/groups/me/apps/...">
+            <small>Abra o relatório no Edge e copie o endereço da barra.</small>
+          </div>
+          <div class="form-group">
+            <label for="cfgPresenteNome">Título do relatório Presente Estadual</label>
+            <input id="cfgPresenteNome" type="text">
+            <small>Texto que aparece no topo do relatório; a coleta confere se abriu a página certa.</small>
+          </div>
+          <div class="form-group">
+            <label for="cfgAprendizagemUrl">Endereço do relatório Aprendizagem Paraná (Pré-Conselho)</label>
+            <input id="cfgAprendizagemUrl" type="url" placeholder="Deixe vazio para não coletar o Pré-Conselho">
+          </div>
+          <div class="form-group"><label for="cfgAprendizagemNome">Título do relatório Aprendizagem Paraná</label><input id="cfgAprendizagemNome" type="text"></div>
+          <label class="form-check">
+            <input type="checkbox" id="cfgColetaGenerica">
+            <span>Ativar também a coleta genérica do Presente Estadual (etapa 1/5)<br><small style="color: var(--text-muted);">Deixe desligado: a lista de alunos vem da etapa 3/5. Ligado, a atualização fica uns 2 minutos mais lenta.</small></span>
+          </label>
+        </div>
+
+        <div class="config-card">
+          <h3>Escola</h3>
+          <p>Dados que aparecem nas mensagens aos responsáveis e nos bilhetes.</p>
+          <div class="form-group"><label for="cfgEscolaMsg">Nome da escola nas mensagens</label><input id="cfgEscolaMsg" type="text"></div>
+          <div class="form-group">
+            <label for="cfgTelefone">Telefone da secretaria</label>
+            <input id="cfgTelefone" type="text" placeholder="(45) 0000-0000">
+            <small>Vai no texto dos avisos para a família ligar.</small>
+          </div>
+          <div class="form-group">
+            <label for="cfgWhatsapp">WhatsApp da escola (número do bot)</label>
+            <input id="cfgWhatsapp" type="text" placeholder="(45) 99999-0000">
+            <small>Impresso nos bilhetes e dentro do QR. Se mudar, imprima os bilhetes de novo (os códigos continuam os mesmos).</small>
+          </div>
+
+          <h3 style="margin-top: 22px;">Avisos de falta</h3>
+          <p>Quem recebe e como sai a mensagem.</p>
+          <div class="form-group">
+            <label for="cfgCanal">Canal de envio</label>
+            <select id="cfgCanal">
+              <option value="dry-run">Simulação (não envia nada)</option>
+              <option value="whatsapp-cloud">WhatsApp (API da Meta)</option>
+              <option value="smtp">E-mail (SMTP)</option>
+              <option value="webhook">Webhook</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="cfgFonte">Origem dos telefones dos responsáveis</label>
+            <select id="cfgFonte">
+              <option value="ambos">Bot do WhatsApp e planilha</option>
+              <option value="cadastros">Só os cadastrados pelo bot</option>
+              <option value="planilha">Só a planilha</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="cfgQueda">Queda mínima para avisar (pontos percentuais)</label>
+            <input id="cfgQueda" type="number" min="0" max="100" step="1">
+            <small>0 = avisa qualquer queda da semana anterior para esta.</small>
+          </div>
+          <div class="form-group">
+            <label for="cfgCritica">Frequência geral crítica abaixo de (%)</label>
+            <input id="cfgCritica" type="number" min="0" max="100" step="1">
+            <small>Abaixo disso, a mensagem pede que a família procure a escola com urgência.</small>
+          </div>
+          <label class="form-check"><input type="checkbox" id="cfgConsentimento"><span>Só enviar para quem deu consentimento (LGPD)</span></label>
+          <label class="form-check"><input type="checkbox" id="cfgAprovacao"><span>Cadastros pelo bot ficam pendentes até a secretaria aprovar<br><small style="color: var(--text-muted);">O bot passa a seguir essa opção depois de reiniciado (feche a janela do bot e abra o painel de novo).</small></span></label>
+        </div>
+
+        <div class="config-card">
+          <h3>Situação deste computador</h3>
+          <p>Só consulta. Senhas e tokens continuam no arquivo .env e nunca aparecem aqui.</p>
+          <ul class="situacao-lista" id="cfgSituacao"><li>Carregando...</li></ul>
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- MODAL DE DISPARO -->
@@ -745,6 +927,93 @@ function gerarHtmlDashboard(): string {
       if (abaId === "aba-busca-ativa") carregarBuscaAtiva();
       if (abaId === "aba-historico") carregarHistorico();
       if (abaId === "aba-bilhetes") carregarBilhetes();
+      if (abaId === "aba-config") carregarConfig();
+    }
+
+    const CAMPOS_CONFIG = {
+      cfgEscolaNome: ["powerbi", "escolaNome"], cfgNre: ["powerbi", "nre"], cfgMunicipio: ["powerbi", "municipio"],
+      cfgEscolaMsg: ["escola", "nome"], cfgTelefone: ["escola", "telefoneContato"], cfgWhatsapp: ["escola", "numeroWhatsappEscola"],
+      cfgCanal: ["avisos", "canal"], cfgFonte: ["avisos", "fonteContatos"]
+    };
+
+    function mostrarErroConfig(msg) {
+      const el = document.getElementById("configErro");
+      el.innerText = msg || "";
+      el.style.display = msg ? "block" : "none";
+    }
+
+    function itemSituacao(ok, texto) {
+      const li = document.createElement("li");
+      li.innerText = (ok ? "✅ " : "⚠️ ") + texto;
+      return li;
+    }
+
+    async function carregarConfig() {
+      mostrarErroConfig("");
+      try {
+        const res = await fetch("/api/configuracoes", { headers: { "X-CostaPresenca": "painel" } });
+        const r = await res.json();
+        if (!res.ok) { mostrarErroConfig(r.erro); return; }
+        const v = r.valores;
+        for (const [id, [grupo, campo]] of Object.entries(CAMPOS_CONFIG)) document.getElementById(id).value = v[grupo][campo];
+        document.getElementById("cfgAno").value = v.powerbi.anoLetivo;
+        document.getElementById("cfgPresenteUrl").value = v.powerbi.presente.url;
+        document.getElementById("cfgPresenteNome").value = v.powerbi.presente.nome;
+        document.getElementById("cfgColetaGenerica").checked = v.powerbi.presente.coletaGenerica;
+        document.getElementById("cfgAprendizagemUrl").value = v.powerbi.aprendizagem.url;
+        document.getElementById("cfgAprendizagemNome").value = v.powerbi.aprendizagem.nome;
+        document.getElementById("cfgQueda").value = v.avisos.quedaMinimaPontos;
+        document.getElementById("cfgCritica").value = v.avisos.presencaGeralCriticaAbaixoDe;
+        document.getElementById("cfgConsentimento").checked = v.avisos.exigirConsentimento;
+        document.getElementById("cfgAprovacao").checked = v.avisos.aprovacaoManual;
+
+        const s = r.situacao;
+        const ul = document.getElementById("cfgSituacao");
+        ul.innerHTML = "";
+        ul.appendChild(itemSituacao(s.loginPowerBi, s.loginPowerBi ? "Login do Power BI feito neste computador" : "Falta o login do Power BI: dê dois cliques em “Entrar no Power BI.bat”"));
+        ul.appendChild(itemSituacao(s.arquivos.env, s.arquivos.env ? "Arquivo .env encontrado" : "Arquivo .env não encontrado"));
+        for (const [nome, ok] of Object.entries(s.segredos)) ul.appendChild(itemSituacao(ok, nome + (ok ? " preenchido" : " vazio no .env")));
+        ul.appendChild(itemSituacao(s.ngrok, s.ngrok ? "ngrok encontrado (o bot recebe mensagens)" : "ngrok não encontrado: só é preciso no computador que roda o bot"));
+        if (v.avisos.canal === "whatsapp-cloud" && !Object.values(s.segredos).every(Boolean)) {
+          ul.appendChild(itemSituacao(false, "O canal WhatsApp está escolhido, mas falta preencher variáveis no .env"));
+        }
+      } catch (e) {
+        mostrarErroConfig("Não foi possível carregar as configurações: " + e.message);
+      }
+    }
+
+    async function salvarConfig() {
+      mostrarErroConfig("");
+      const val = id => document.getElementById(id).value;
+      const dados = { powerbi: { presente: {}, aprendizagem: {} }, escola: {}, avisos: {} };
+      for (const [id, [grupo, campo]] of Object.entries(CAMPOS_CONFIG)) dados[grupo][campo] = val(id);
+      dados.powerbi.anoLetivo = Number(val("cfgAno"));
+      dados.powerbi.presente = { url: val("cfgPresenteUrl"), nome: val("cfgPresenteNome"), coletaGenerica: document.getElementById("cfgColetaGenerica").checked };
+      dados.powerbi.aprendizagem = { url: val("cfgAprendizagemUrl"), nome: val("cfgAprendizagemNome") };
+      dados.avisos.quedaMinimaPontos = Number(val("cfgQueda"));
+      dados.avisos.presencaGeralCriticaAbaixoDe = Number(val("cfgCritica"));
+      dados.avisos.exigirConsentimento = document.getElementById("cfgConsentimento").checked;
+      dados.avisos.aprovacaoManual = document.getElementById("cfgAprovacao").checked;
+      if (dados.avisos.canal !== "dry-run" && !confirm("Com este canal, o botão de disparo passa a enviar mensagens de verdade. Salvar mesmo assim?")) return;
+
+      const btn = document.getElementById("btnSalvarConfig");
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/configuracoes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CostaPresenca": "painel" },
+          body: JSON.stringify(dados)
+        });
+        const r = await res.json();
+        if (!res.ok) { mostrarErroConfig(r.erro); return; }
+        toast(r.alterados.length ? "Salvo: " + r.alterados.join(", ") : "Nada mudou.");
+        carregarStatus();
+        carregarConfig();
+      } catch (e) {
+        mostrarErroConfig("Não foi possível salvar: " + e.message);
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     async function carregarBilhetes() {
