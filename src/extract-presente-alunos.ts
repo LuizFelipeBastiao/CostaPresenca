@@ -15,6 +15,7 @@ import {
 } from "./powerbi/filters.js";
 import { decodeDsrPayload, type DsrTableResult } from "./powerbi/dsr-decoder.js";
 import { aguardarCapturas } from "./powerbi/network-interceptor.js";
+import { buscarJanelasRestantes, herdarSchema, juntarTabelas, type ConsultaCapturada } from "./powerbi/paginacao.js";
 
 /**
  * Última garantia de escopo: se a tabela tiver uma coluna de escola, mantém só as linhas
@@ -50,6 +51,16 @@ async function esperarSilencio(
   }
 }
 
+/** As consultas reenviadas só podem ir para o serviço de dados do próprio Power BI. */
+function assertHostDeConsulta(url: string): void {
+  const u = new URL(url);
+  const host = u.hostname.toLowerCase();
+  const permitido = host.endsWith(".analysis.windows.net") || host === "app.powerbi.com" || host.endsWith(".powerbi.com");
+  if (u.protocol !== "https:" || !permitido) {
+    throw new Error(`Consulta do Power BI para um endereço inesperado (${host}); a paginação foi interrompida.`);
+  }
+}
+
 export async function extractPresenteAlunos(): Promise<{
   totalAlunos: number;
   csvPath: string;
@@ -71,6 +82,8 @@ export async function extractPresenteAlunos(): Promise<{
   const page = (await context.pages())[0] ?? (await context.newPage());
 
   const capturedAlunoPayloads: any[] = [];
+  // Pedido que gerou cada payload acima (mesmo índice): é reenviado para buscar as janelas seguintes.
+  const capturedAlunoConsultas: ConsultaCapturada[] = [];
   // Momento da última consulta do Power BI: serve para saber quando o relatório parou de carregar.
   let ultimaConsulta = Date.now();
   const onResponse = async (response: import("playwright").Response) => {
@@ -84,7 +97,14 @@ export async function extractPresenteAlunos(): Promise<{
         const json = await response.json();
         const bodyStr = JSON.stringify(json);
         if (bodyStr.includes("NomeAluno") && bodyStr.includes("cgm")) {
+          const request = response.request();
+          const consulta: ConsultaCapturada = {
+            url,
+            corpo: request.postData() ?? "",
+            headers: await request.allHeaders()
+          };
           capturedAlunoPayloads.push(json);
+          capturedAlunoConsultas.push(consulta);
         }
       } catch {}
     }
@@ -116,6 +136,7 @@ export async function extractPresenteAlunos(): Promise<{
     for (let tentativa = 1; tentativa <= 3 && !turmaCarregou; tentativa += 1) {
       console.log(`[3/4] Clicando no botão TURMA (tentativa ${tentativa}/3)...`);
       capturedAlunoPayloads.length = 0;
+      capturedAlunoConsultas.length = 0;
       if (!(await clickBookmarkButton(page, "TURMA"))) {
         throw new Error('Botão "TURMA" não encontrado no relatório Presente Estadual.');
       }
@@ -143,9 +164,28 @@ export async function extractPresenteAlunos(): Promise<{
       throw new Error("Nenhum payload analítico de alunos foi interceptado na resposta da aba TURMA.");
     }
 
-    // Decodifica a tabela (a última resposta reflete o estado final dos filtros)
-    const bestPayload = capturedAlunoPayloads[capturedAlunoPayloads.length - 1]!;
-    const decoded = filtrarPelaEscola(decodeDsrPayload(bestPayload), config.context.escolaNome);
+    // A última resposta reflete o estado final dos filtros. Ela traz só a primeira janela
+    // (~500 linhas); as seguintes são pedidas reenviando a mesma consulta com o token de continuação.
+    const ultima = capturedAlunoPayloads.length - 1;
+    const primeiraJanela = capturedAlunoPayloads[ultima]!;
+    const consulta = capturedAlunoConsultas[ultima];
+    let janelas: unknown[] = [primeiraJanela];
+    if (consulta) {
+      assertHostDeConsulta(consulta.url);
+      janelas = await buscarJanelasRestantes(primeiraJanela, consulta, async (url, headers, corpo) => {
+        const resposta = await page.request.post(url, { headers, data: corpo, timeout: 90_000 });
+        if (!resposta.ok()) throw new Error(`O Power BI recusou a janela seguinte da lista (HTTP ${resposta.status()}).`);
+        return resposta.json();
+      });
+      if (janelas.length > 1) console.log(`[4/4] Lista de alunos recebida em ${janelas.length} partes.`);
+    } else if (JSON.stringify(primeiraJanela).includes('"IC":false')) {
+      throw new Error("A lista de alunos veio incompleta e o pedido original não foi capturado para buscar o restante.");
+    }
+    const bestPayload = janelas.length === 1 ? primeiraJanela : janelas;
+    const decoded = filtrarPelaEscola(
+      juntarTabelas(janelas.map((j, i) => decodeDsrPayload(i === 0 ? j : herdarSchema(j, primeiraJanela)))),
+      config.context.escolaNome
+    );
 
     const outDir = path.join(config.outputDirectory, "presente-alunos");
     if (!fs.existsSync(outDir)) {

@@ -2,6 +2,8 @@
 
 Solução auditável para automação do acompanhamento da frequência escolar, leitura dos relatórios oficiais do Power BI da SEED-PR, notificação personalizada de responsáveis via WhatsApp/e-mail e emissão de fichas para o Conselho Tutelar.
 
+> 📘 **Configurando pela primeira vez?** Siga o [Guia de configuração](GUIA_DE_CONFIGURACAO.md): passo a passo do computador novo até o bot do WhatsApp respondendo.
+
 ---
 
 ## 🚀 Como Rodar Tudo de Uma Vez (1 único `.bat`)
@@ -315,7 +317,7 @@ npm run cadastro -- recusar 123456789
 
 ### 3. Expor o bot na internet (túnel)
 
-A Meta só entrega mensagens numa URL **HTTPS pública**. O bot roda no PC da escola e escuta apenas em `localhost:3001`. Um túnel publica **somente** essa porta; o painel (porta 3000) continua acessível só no PC.
+A Meta só entrega mensagens numa URL **HTTPS pública**. O bot roda no PC da escola e escuta apenas em `localhost:3001`. Um túnel publica **somente** essa porta; o painel (porta 3000) não passa pelo túnel e não fica exposto na internet (mas pode ser aberto por outros computadores da rede da escola, porque ainda não tem login).
 
 Com o **ngrok**, a conta gratuita já vem com um endereço fixo (`algo.ngrok-free.dev`) que não muda ao reiniciar:
 
